@@ -14,7 +14,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "weebcentral",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.weebcentral.WeebCentralPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.weebcentral.WeebCentralPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

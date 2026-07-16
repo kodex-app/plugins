@@ -14,7 +14,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "madara",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.madara.MadaraPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.madara.MadaraPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

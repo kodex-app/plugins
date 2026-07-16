@@ -25,7 +25,7 @@ tasks.named<Jar>("jar") {
             "Plugin-Id" to "ranobedb",
             "Plugin-Name" to "RanobeDB",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.ranobedb.RanobeDbPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.ranobedb.RanobeDbPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

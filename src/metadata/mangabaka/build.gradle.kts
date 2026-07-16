@@ -26,7 +26,7 @@ tasks.named<Jar>("jar") {
             "Plugin-Id" to "mangabaka",
             "Plugin-Name" to "MangaBaka",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.mangabaka.MangaBakaPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.mangabaka.MangaBakaPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

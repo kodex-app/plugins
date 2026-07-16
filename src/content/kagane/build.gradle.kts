@@ -15,7 +15,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "kagane",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.kagane.KaganePlugin",
+            "Plugin-Class" to "dev.kodex.plugin.kagane.KaganePlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

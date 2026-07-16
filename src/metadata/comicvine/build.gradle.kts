@@ -27,7 +27,7 @@ tasks.named<Jar>("jar") {
             "Plugin-Id" to "comicvine",
             "Plugin-Name" to "ComicVine",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.comicvine.ComicVinePlugin",
+            "Plugin-Class" to "dev.kodex.plugin.comicvine.ComicVinePlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

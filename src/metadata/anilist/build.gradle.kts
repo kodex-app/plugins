@@ -26,7 +26,7 @@ tasks.named<Jar>("jar") {
             "Plugin-Id" to "anilist",
             "Plugin-Name" to "AniList",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.anilist.AniListPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.anilist.AniListPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

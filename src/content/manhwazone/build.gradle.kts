@@ -15,7 +15,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "manhwazone",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.manhwazone.ManhwaZonePlugin",
+            "Plugin-Class" to "dev.kodex.plugin.manhwazone.ManhwaZonePlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

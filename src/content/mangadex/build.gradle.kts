@@ -14,7 +14,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "mangadex",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.mangadex.MangaDexPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.mangadex.MangaDexPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

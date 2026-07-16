@@ -29,7 +29,7 @@ tasks.named<Jar>("jar") {
             "Plugin-Id" to "goodreads",
             "Plugin-Name" to "Goodreads",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.goodreads.GoodreadsPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.goodreads.GoodreadsPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

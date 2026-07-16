@@ -15,7 +15,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "wuxiaworld",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.wuxiaworld.WuxiaWorldPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.wuxiaworld.WuxiaWorldPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

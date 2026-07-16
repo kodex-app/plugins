@@ -28,7 +28,7 @@ tasks.named<Jar>("jar") {
             "Plugin-Id" to "amazon",
             "Plugin-Name" to "Amazon",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.amazon.AmazonPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.amazon.AmazonPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

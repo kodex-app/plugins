@@ -14,7 +14,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "lnori",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.lnori.LnoriPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.lnori.LnoriPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

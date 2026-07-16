@@ -15,7 +15,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "rawkuma",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.rawkuma.RawkumaPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.rawkuma.RawkumaPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

@@ -14,7 +14,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "royalroad",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.royalroad.RoyalRoadPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.royalroad.RoyalRoadPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

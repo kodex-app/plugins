@@ -14,7 +14,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "dokiraw",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.dokiraw.DokirawPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.dokiraw.DokirawPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

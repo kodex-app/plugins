@@ -14,7 +14,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "mangakuro",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.mangakuro.MangaKuroPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.mangakuro.MangaKuroPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

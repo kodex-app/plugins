@@ -27,7 +27,7 @@ tasks.named<Jar>("jar") {
             "Plugin-Id" to "googlebooks",
             "Plugin-Name" to "Google Books",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.googlebooks.GoogleBooksPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.googlebooks.GoogleBooksPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

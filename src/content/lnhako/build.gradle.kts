@@ -14,7 +14,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "lnhako",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.lnhako.LnHakoPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.lnhako.LnHakoPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

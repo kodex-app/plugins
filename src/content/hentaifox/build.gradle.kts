@@ -15,7 +15,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "hentaifox",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.hentaifox.HentaiFoxPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.hentaifox.HentaiFoxPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

@@ -26,7 +26,7 @@ tasks.named<Jar>("jar") {
             "Plugin-Id" to "openlibrary",
             "Plugin-Name" to "Open Library",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.openlibrary.OpenLibraryPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.openlibrary.OpenLibraryPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

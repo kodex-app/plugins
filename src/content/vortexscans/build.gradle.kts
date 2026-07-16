@@ -15,7 +15,7 @@ tasks.named<Jar>("jar") {
         attributes(
             "Plugin-Id" to "vortexscans",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.vortexscans.VortexScansPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.vortexscans.VortexScansPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }

@@ -27,7 +27,7 @@ tasks.named<Jar>("jar") {
             "Plugin-Id" to "hardcover",
             "Plugin-Name" to "Hardcover",
             "Plugin-Version" to project.version.toString(),
-            "Plugin-Class" to "dev.kodex.ext.hardcover.HardcoverPlugin",
+            "Plugin-Class" to "dev.kodex.plugin.hardcover.HardcoverPlugin",
             "Plugin-Provider" to "Kodex",
         )
     }
