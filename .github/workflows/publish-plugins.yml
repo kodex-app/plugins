@@ -2,7 +2,7 @@ name: Build plugins and publish repository
 
 # Builds plugin JARs and the pf4j-update plugins.json, then force-pushes the result to the
 # `repo` branch. That branch IS the public plugin repository — point a Kodex plugin-repository URL at
-#   https://raw.githubusercontent.com/kodex-app/kodex-plugins/repository/plugins.json
+#   https://raw.githubusercontent.com/kodex-app/plugins/refs/heads/repo/plugins.json
 # (the JAR release URLs in plugins.json are relative, resolved against that same directory).
 #
 # Incremental by default: only plugins whose sources changed in the push are rebuilt; every other
