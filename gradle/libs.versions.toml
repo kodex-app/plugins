@@ -1,0 +1,15 @@
+[versions]
+kodexSpi = "0.1.0"
+pf4j = "3.15.0"
+jsoup = "1.22.2"
+okhttp = "5.4.0"
+jackson = "3.1.4"
+slf4j = "2.0.18"
+
+[libraries]
+kodex-spi = { module = "com.github.kodex-app:spi", version.ref = "kodexSpi" }
+pf4j = { module = "org.pf4j:pf4j", version.ref = "pf4j" }
+jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind", version.ref = "jackson" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }

@@ -1,0 +1,10 @@
+# Gradle
+.gradle
+build
+
+# IDE
+/.idea/
+
+# Vendored SPI checkout (Docker/CI builds clone this into the repo root — never commit it)
+/kodex-spi/
+/CLAUDE.md

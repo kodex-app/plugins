@@ -1,0 +1,95 @@
+name: Build plugins and publish repository
+
+# Builds plugin JARs and the pf4j-update plugins.json, then force-pushes the result to the
+# `repo` branch. That branch IS the public plugin repository — point a Kodex plugin-repository URL at
+#   https://raw.githubusercontent.com/kodex-app/kodex-plugins/repository/plugins.json
+# (the JAR release URLs in plugins.json are relative, resolved against that same directory).
+#
+# Incremental by default: only plugins whose sources changed in the push are rebuilt; every other
+# JAR is carried over byte-identical from the current repo branch (no hash churn). A FULL
+# rebuild happens when anything outside src/ changes (build infrastructure), when the repo
+# branch doesn't exist yet, when the pre-push commit is unknown (force push), or on manual dispatch.
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One publish at a time — concurrent force-pushes to the repo branch would race.
+concurrency:
+  group: publish-plugins
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # change detection diffs against the pre-push commit
+
+      - name: Determine build scope
+        id: scope
+        run: |
+          FULL=1
+          CHANGED=""
+          BEFORE="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" = "push" ] \
+             && [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null \
+             && git ls-remote --exit-code origin repo >/dev/null 2>&1; then
+            DIFF="$(git diff --name-only "$BEFORE" "${{ github.sha }}")"
+            # Any change outside src/ (build files, workflow, tools/) forces a full rebuild.
+            if ! echo "$DIFF" | grep -qvE '^src/'; then
+              FULL=0
+              # src/<kind>/<dir>/** → <kind>-<dir>, keeping only modules that still exist
+              # (a deleted plugin is pruned by updatePluginsRepo without being rebuilt).
+              for m in $(echo "$DIFF" | sed -n 's|^src/\(content\|metadata\)/\([^/]*\)/.*|\1/\2|p' | sort -u); do
+                [ -d "src/$m" ] && CHANGED="$CHANGED,$(echo "$m" | tr '/' '-')"
+              done
+              CHANGED="${CHANGED#,}"
+            fi
+          fi
+          echo "full=$FULL" >> "$GITHUB_OUTPUT"
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "Build scope: full=$FULL changed=[$CHANGED]"
+
+      # Gradle runs on JDK 21; the Java 25 toolchain the plugins target is auto-downloaded by the
+      # foojay resolver plugin (see settings.gradle.kts).
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build plugin repository (full)
+        if: steps.scope.outputs.full == '1'
+        run: ./gradlew generatePluginsJson
+
+      - name: Fetch the current plugin repository
+        if: steps.scope.outputs.full == '0'
+        run: |
+          git fetch origin repo
+          mkdir -p prev-repo
+          git archive origin/repo | tar -x -C prev-repo
+
+      - name: Build plugin repository (incremental)
+        if: steps.scope.outputs.full == '0'
+        run: ./gradlew updatePluginsRepo -PpreviousRepo="$PWD/prev-repo" -PchangedPlugins="${{ steps.scope.outputs.changed }}"
+
+      - name: Push plugin repository to the repo branch
+        run: |
+          cd build/plugins-repo
+          git init -b repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Build plugins from ${GITHUB_SHA::7}"
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
