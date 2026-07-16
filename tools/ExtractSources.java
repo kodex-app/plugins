@@ -38,6 +38,11 @@ public final class ExtractSources {
                     entry.put("name", (String) cls.getMethod("displayName").invoke(source));
                     String lang = (String) cls.getMethod("language").invoke(source);
                     entry.put("lang", lang == null ? "all" : lang); // Mihon's mixed-language marker
+                    // MediaKind the source serves (COMIC/BOOK) — lets the UI badge each content source.
+                    Object kind = cls.getMethod("kind").invoke(source);
+                    if (kind != null) {
+                        entry.put("kind", ((Enum<?>) kind).name());
+                    }
                     String website = (String) cls.getMethod("website").invoke(source);
                     if (website != null) {
                         entry.put("baseUrl", website);
