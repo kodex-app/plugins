@@ -2,6 +2,9 @@ plugins {
     java
 }
 
+// 1.0.1: ported off the retired v1 API onto /api/v2 (the old endpoints now answer 403).
+version = "1.0.1"
+
 dependencies {
     compileOnly(libs.kodex.spi)
     compileOnly(libs.okhttp) // outbound HTTP via the core-provided OkHttpClient (host-provided)
