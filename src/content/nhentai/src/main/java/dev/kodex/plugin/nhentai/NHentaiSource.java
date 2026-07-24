@@ -32,6 +32,11 @@ import java.util.Map;
  * the site's own gallery paths ({@code /g/<id>/}), which is also what Mihon stores, so backup
  * imports need no translation.
  *
+ * <p>The catalogue is <b>mixed-language</b> (English, Japanese, Chinese, …), so {@link #language()}
+ * is left {@code null} — matching Mihon's single "all"-language nhentai source, which keeps
+ * {@link #id()} equal to Mihon's. Callers narrow to one language with the {@code Language} search
+ * filter, not by the source's own tag.
+ *
  * <p>Speaks the <b>v2</b> API ({@code /api/v2}, documented at {@code /api/v2/docs}): the v1
  * endpoints the Mihon extension used now answer {@code 403 "Use new API"}. v2 also stopped hardcoding
  * image hosts — a gallery reports bare paths, and {@code /api/v2/cdn} names the servers they hang off.
@@ -71,10 +76,8 @@ public class NHentaiSource implements ContentSource {
         return "NHentai";
     }
 
-    @Override
-    public String language() {
-        return "en";
-    }
+    // language() is intentionally not overridden: nhentai serves many languages, so the SPI default
+    // (null = mixed-language) is correct, and id() then keys on "all" — Mihon's nhentai id.
 
     @Override
     public boolean adultContent() {
