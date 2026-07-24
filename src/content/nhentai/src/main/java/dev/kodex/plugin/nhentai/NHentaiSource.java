@@ -31,23 +31,30 @@ import java.util.Map;
  * nhentai — a doujinshi gallery site whose whole catalogue is served by a JSON API. Series ids are
  * the site's own gallery paths ({@code /g/<id>/}), which is also what Mihon stores, so backup
  * imports need no translation.
+ *
+ * <p>Speaks the <b>v2</b> API ({@code /api/v2}, documented at {@code /api/v2/docs}): the v1
+ * endpoints the Mihon extension used now answer {@code 403 "Use new API"}. v2 also stopped hardcoding
+ * image hosts — a gallery reports bare paths, and {@code /api/v2/cdn} names the servers they hang off.
  */
 @Extension
 public class NHentaiSource implements ContentSource {
 
     private static final String BASE_URL = "https://nhentai.net";
-    private static final String API_URL = BASE_URL + "/api";
-    private static final String IMG_URL = "https://i.nhentai.net/galleries";
-    private static final String THUMB_URL = "https://t.nhentai.net/galleries";
+    private static final String API_URL = BASE_URL + "/api/v2";
+    // Used only if /api/v2/cdn can't be read; the numbered hosts it lists are interchangeable mirrors.
+    private static final List<String> FALLBACK_IMAGE_SERVERS = List.of("https://i1.nhentai.net");
+    private static final List<String> FALLBACK_THUMB_SERVERS = List.of("https://t1.nhentai.net");
     // Cloudflare fronts nhentai and rejects non-browser clients; this UA + Referer pair goes on every request.
     private static final String USER_AGENT =
         "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) "
             + "Chrome/120.0.0.0 Mobile Safari/537.36";
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final int DEFAULT_PER_PAGE = 25;
 
     private static final OkHttpClient FALLBACK = new OkHttpClient();
     private volatile HttpClientProvider httpProvider;
+    /** CDN hosts from {@code /api/v2/cdn}, fetched once per source instance. */
+    private volatile List<String> imageServers;
+    private volatile List<String> thumbServers;
 
     @Override
     public void setHttpClientProvider(HttpClientProvider provider) {
@@ -88,8 +95,9 @@ public class NHentaiSource implements ContentSource {
 
     @Override
     public SeriesPage popular(int page, ProviderSettings settings) {
-        HttpUrl url = HttpUrl.get(API_URL + "/galleries/search").newBuilder()
-            .addQueryParameter("query", "*")
+        // /galleries/popular returns one unpaged list of today's picks; search sorts the whole catalogue.
+        HttpUrl url = HttpUrl.get(API_URL + "/search").newBuilder()
+            .addQueryParameter("query", Filters.MATCH_ALL)
             .addQueryParameter("sort", "popular")
             .addQueryParameter("page", String.valueOf(Math.max(1, page)))
             .build();
@@ -98,7 +106,7 @@ public class NHentaiSource implements ContentSource {
 
     @Override
     public SeriesPage latest(int page, ProviderSettings settings) {
-        HttpUrl url = HttpUrl.get(API_URL + "/galleries/all").newBuilder()
+        HttpUrl url = HttpUrl.get(API_URL + "/galleries").newBuilder()
             .addQueryParameter("page", String.valueOf(Math.max(1, page)))
             .build();
         return galleryList(url.toString());
@@ -107,50 +115,54 @@ public class NHentaiSource implements ContentSource {
     @Override
     public SeriesPage search(String query, int page, FilterList filters, ProviderSettings settings) {
         FilterList effective = (filters == null || filters.filters().isEmpty()) ? getFilterList() : filters;
-        HttpUrl.Builder url = HttpUrl.get(API_URL + "/galleries/search").newBuilder();
+        HttpUrl.Builder url = HttpUrl.get(API_URL + "/search").newBuilder();
+        // `query` is mandatory and must be non-empty — Filters yields the match-all token when nothing is set.
+        url.addQueryParameter("query", Filters.combineQuery(query, effective));
         String sort = Filters.sort(effective);
         if (sort != null) {
             url.addQueryParameter("sort", sort);
         }
-        url.addQueryParameter("query", Filters.combineQuery(query, effective));
         url.addQueryParameter("page", String.valueOf(Math.max(1, page)));
         return galleryList(url.build().toString());
     }
 
+    /** Reads a {@code PaginatedResponse[GalleryListItem]} — the shape both /search and /galleries return. */
     private SeriesPage galleryList(String url) {
         JsonNode root = getJson(url);
         if (root == null) {
             return SeriesPage.empty();
         }
-        JsonNode result = root.path("result");
         List<SearchResult> items = new ArrayList<>();
-        for (JsonNode gallery : result) {
-            items.add(toSearchResult(gallery));
+        for (JsonNode gallery : root.path("result")) {
+            items.add(fromListItem(gallery));
         }
-        // A full page means there is very likely another one — the API reports no "has next" flag.
-        int perPage = root.path("per_page").asInt(DEFAULT_PER_PAGE);
-        return new SeriesPage(items, result.size() >= perPage);
+        // v2 reports the page count outright, so no guessing from a full page of results.
+        int page = pageOf(url);
+        return new SeriesPage(items, page < root.path("num_pages").asInt(page));
+    }
+
+    /**
+     * A list entry: v2 trims these to titles and a thumbnail (tags arrive as bare
+     * {@code tag_ids}), so everything else is left to {@link #seriesDetails}.
+     */
+    private SearchResult fromListItem(JsonNode gallery) {
+        String title = firstNonBlank(text(gallery, "english_title"), text(gallery, "japanese_title"));
+        return new SearchResult(id(), externalIdOf(gallery), title.isBlank() ? externalIdOf(gallery) : title,
+            null, thumbUrl(text(gallery, "thumbnail")), null, null,
+            List.of(), SeriesStatus.COMPLETED, Map.of());
     }
 
     // ---- Details ---------------------------------------------------------------------------------
 
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
-        JsonNode gallery = getJson(API_URL + "/gallery/" + galleryId(seriesExternalId));
+        JsonNode gallery = getJson(API_URL + "/galleries/" + galleryId(seriesExternalId));
         if (gallery == null || gallery.path("id").isMissingNode()) {
             return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
                 null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
         }
-        return toSearchResult(gallery);
-    }
-
-    private SearchResult toSearchResult(JsonNode gallery) {
-        String externalId = "/g/" + gallery.path("id").asString("") + "/";
         JsonNode title = gallery.path("title");
-        String display = firstNonBlank(
-            title.path("english").asString(""),
-            title.path("pretty").asString(""),
-            title.path("japanese").asString(""));
+        String display = firstNonBlank(text(title, "english"), text(title, "pretty"), text(title, "japanese"));
 
         Map<String, List<String>> tagsByType = tagsByType(gallery.path("tags"));
         String artists = join(tagsByType.get("artist"));
@@ -162,13 +174,10 @@ public class NHentaiSource implements ContentSource {
         description.append("Pages: ").append(gallery.path("num_pages").asInt(0)).append('\n');
         description.append("Favorites: ").append(gallery.path("num_favorites").asInt(0));
 
-        List<String> genres = tagsByType.getOrDefault("tag", List.of());
-        String mediaId = gallery.path("media_id").asString("");
-        String cover = mediaId.isBlank() ? null
-            : THUMB_URL + "/" + mediaId + "/thumb." + extension(gallery.path("images").path("thumbnail"));
-
+        String externalId = externalIdOf(gallery);
         return new SearchResult(id(), externalId, display.isBlank() ? externalId : display,
-            description.toString(), cover, artists, artists, genres,
+            description.toString(), thumbUrl(text(gallery.path("cover"), "path")),
+            artists, artists, tagsByType.getOrDefault("tag", List.of()),
             // Doujinshi are one-shots: there is never anything more to publish.
             SeriesStatus.COMPLETED, Map.of());
     }
@@ -178,7 +187,7 @@ public class NHentaiSource implements ContentSource {
     @Override
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         String galleryId = galleryId(seriesExternalId);
-        JsonNode gallery = getJson(API_URL + "/gallery/" + galleryId);
+        JsonNode gallery = getJson(API_URL + "/galleries/" + galleryId);
         if (gallery == null || gallery.path("id").isMissingNode()) {
             return List.of();
         }
@@ -191,22 +200,20 @@ public class NHentaiSource implements ContentSource {
 
     @Override
     public List<SourcePage> pageList(String chapterExternalId, ProviderSettings settings) {
-        JsonNode gallery = getJson(API_URL + "/gallery/" + galleryId(chapterExternalId));
+        JsonNode gallery = getJson(API_URL + "/galleries/" + galleryId(chapterExternalId));
         if (gallery == null) {
             return List.of();
         }
-        String mediaId = gallery.path("media_id").asString("");
-        if (mediaId.isBlank()) {
-            return List.of();
-        }
+        // Pages are served off any image mirror; pin one per gallery so a reader keeps a single connection.
+        String server = pick(imageServers(), gallery.path("media_id").asInt(0));
         Map<String, String> headers = imageHeaders();
         List<SourcePage> pages = new ArrayList<>();
         int index = 0;
-        for (JsonNode image : gallery.path("images").path("pages")) {
-            // Page files are numbered from 1 in gallery order; the API only carries their type.
-            pages.add(new SourcePage(index, IMG_URL + "/" + mediaId + "/" + (index + 1) + "." + extension(image),
-                headers));
-            index++;
+        for (JsonNode page : gallery.path("pages")) {
+            String path = text(page, "path");
+            if (!path.isBlank()) {
+                pages.add(new SourcePage(index++, server + "/" + path, headers));
+            }
         }
         return pages;
     }
@@ -216,13 +223,75 @@ public class NHentaiSource implements ContentSource {
         return imageHeaders();
     }
 
+    // ---- CDN -------------------------------------------------------------------------------------
+
+    /**
+     * The image/thumbnail hosts from {@code /api/v2/cdn}. v2 galleries carry only paths
+     * ({@code galleries/<media_id>/1.webp}), and the servers are the site's own answer for what to
+     * hang them off — so they're read from there rather than hardcoded.
+     */
+    private List<String> imageServers() {
+        if (imageServers == null) {
+            loadCdnConfig();
+        }
+        return imageServers;
+    }
+
+    private List<String> thumbServers() {
+        if (thumbServers == null) {
+            loadCdnConfig();
+        }
+        return thumbServers;
+    }
+
+    private synchronized void loadCdnConfig() {
+        if (imageServers != null && thumbServers != null) {
+            return;
+        }
+        JsonNode cdn = getJson(API_URL + "/cdn");
+        imageServers = hosts(cdn == null ? null : cdn.path("image_servers"), FALLBACK_IMAGE_SERVERS);
+        thumbServers = hosts(cdn == null ? null : cdn.path("thumb_servers"), FALLBACK_THUMB_SERVERS);
+    }
+
+    private static List<String> hosts(JsonNode array, List<String> fallback) {
+        if (array == null || !array.isArray()) {
+            return fallback;
+        }
+        List<String> hosts = new ArrayList<>();
+        for (JsonNode host : array) {
+            String value = host.asString("");
+            if (!value.isBlank()) {
+                hosts.add(value.replaceAll("/+$", ""));
+            }
+        }
+        return hosts.isEmpty() ? fallback : hosts;
+    }
+
+    /** Covers and thumbnails live on the thumb mirrors, not the page-image ones. */
+    private String thumbUrl(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        return pick(thumbServers(), path.hashCode()) + "/" + path;
+    }
+
+    /** Spreads galleries across the mirrors, but deterministically — the same gallery keeps one host. */
+    private static String pick(List<String> servers, int key) {
+        return servers.get(Math.floorMod(key, servers.size()));
+    }
+
     // ---- Helpers ---------------------------------------------------------------------------------
 
     private static Map<String, String> imageHeaders() {
         return Map.of("User-Agent", USER_AGENT, "Referer", BASE_URL + "/");
     }
 
-    /** {@code /g/123456/} (as stored by Kodex and Mihon alike) → {@code 123456}. */
+    /** The gallery path Kodex and Mihon both store: {@code /g/<id>/}. */
+    private static String externalIdOf(JsonNode gallery) {
+        return "/g/" + gallery.path("id").asInt(0) + "/";
+    }
+
+    /** {@code /g/123456/} → {@code 123456}. */
     private static String galleryId(String externalId) {
         if (externalId == null) {
             return "";
@@ -235,11 +304,10 @@ public class NHentaiSource implements ContentSource {
     private static Map<String, List<String>> tagsByType(JsonNode tags) {
         Map<String, List<String>> byType = new LinkedHashMap<>();
         for (JsonNode tag : tags) {
-            String name = tag.path("name").asString("");
-            if (name.isBlank()) {
-                continue;
+            String name = text(tag, "name");
+            if (!name.isBlank()) {
+                byType.computeIfAbsent(text(tag, "type"), k -> new ArrayList<>()).add(name);
             }
-            byType.computeIfAbsent(tag.path("type").asString(""), k -> new ArrayList<>()).add(name);
         }
         return byType;
     }
@@ -254,6 +322,12 @@ public class NHentaiSource implements ContentSource {
         return values == null || values.isEmpty() ? null : String.join(", ", values);
     }
 
+    /** A string field, with explicit JSON {@code null}s (v2 marks optional titles that way) read as blank. */
+    private static String text(JsonNode parent, String field) {
+        JsonNode node = parent.path(field);
+        return node.isNull() || node.isMissingNode() ? "" : node.asString("");
+    }
+
     private static String firstNonBlank(String... candidates) {
         for (String candidate : candidates) {
             if (candidate != null && !candidate.isBlank()) {
@@ -263,14 +337,13 @@ public class NHentaiSource implements ContentSource {
         return "";
     }
 
-    /** The image's file extension, from the one-letter {@code t}ype the API reports. */
-    private static String extension(JsonNode image) {
-        return switch (image.path("t").asString("j")) {
-            case "p" -> "png";
-            case "g" -> "gif";
-            case "w" -> "webp";
-            default -> "jpg";
-        };
+    private static int pageOf(String url) {
+        String page = HttpUrl.get(url).queryParameter("page");
+        try {
+            return page == null ? 1 : Integer.parseInt(page);
+        } catch (NumberFormatException e) {
+            return 1;
+        }
     }
 
     private static LocalDate uploadDate(long epochSeconds) {
@@ -282,6 +355,7 @@ public class NHentaiSource implements ContentSource {
             .url(url)
             .header("User-Agent", USER_AGENT)
             .header("Referer", BASE_URL + "/")
+            .header("Accept", "application/json")
             .get().build();
         try (Response res = http().newCall(req).execute()) {
             throwIfRateLimited(res);
@@ -297,7 +371,11 @@ public class NHentaiSource implements ContentSource {
         }
     }
 
-    /** Signals a 429 to the core so the download worker backs off and retries instead of failing the chapter. */
+    /**
+     * Signals a 429 to the core so the download worker backs off and retries instead of failing the
+     * chapter. v2 rate-limits anonymous callers hard (10 searches/min, 20 gallery reads/min), so this
+     * is a normal outcome of a busy library scan, not an error.
+     */
     private static void throwIfRateLimited(Response res) {
         if (res.code() != 429) {
             return;

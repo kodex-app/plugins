@@ -7,15 +7,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The search filters, mirroring the Mihon extension's {@code getFilterList()}. nhentai has no
- * structured search parameters beyond {@code sort} — every refinement is a token in the single
- * {@code query} string ({@code artist:foo}, {@code language:english}, a bare tag name), so these
- * filters only build that string.
+ * The search filters. nhentai has no structured search parameters beyond {@code sort} — every
+ * refinement is a token in the single {@code query} string, in the syntax the v2 API documents:
+ * {@code artist:name}, {@code language:english}, {@code tag:"big breasts"}, {@code -negated}. So
+ * these filters exist only to build that string.
  */
 final class Filters {
 
     private Filters() {
     }
+
+    /** {@code query} is mandatory and must be non-empty; this is nhentai's match-anything token. */
+    static final String MATCH_ALL = "*";
 
     static final String SORT = "Sort by";
     static final String LANGUAGE = "Language";
@@ -26,9 +29,10 @@ final class Filters {
     static final String GROUP = "Group / Circle";
 
     private static final List<String> SORT_LABELS =
-        List.of("Recent", "Popular Today", "Popular Week", "All Time Popular");
+        List.of("Recent", "Popular Today", "Popular Week", "Popular Month", "All Time Popular");
+    // The sort values the v2 /search endpoint accepts — anything else is a validation error.
     private static final List<String> SORT_VALUES =
-        List.of("date", "popular-today", "popular-week", "popular");
+        List.of("date", "popular-today", "popular-week", "popular-month", "popular");
 
     private static final List<String> LANGUAGE_LABELS = List.of("All", "English", "Japanese", "Chinese");
     private static final List<String> LANGUAGE_VALUES = List.of("", "english", "japanese", "chinese");
@@ -40,7 +44,7 @@ final class Filters {
             new Filter.Select(SORT, SORT_LABELS),
             new Filter.Select(LANGUAGE, LANGUAGE_LABELS),
             new Filter.Separator(""),
-            new Filter.Header("Tag filters (exact name, e.g. \"sole male\")"),
+            new Filter.Header("Tag filters (exact name, e.g. \"sole male\"); prefix with - to exclude"),
             new Filter.TextFilter(TAG),
             new Filter.TextFilter(ARTIST),
             new Filter.TextFilter(CHARACTER),
@@ -55,14 +59,14 @@ final class Filters {
 
     /**
      * The free-text query plus every non-blank filter term, space-joined the way nhentai reads them
-     * (AND). {@code "*"} when nothing was entered — nhentai's match-anything query.
+     * (AND). {@link #MATCH_ALL} when nothing was entered.
      */
     static String combineQuery(String query, FilterList filters) {
         List<String> parts = new ArrayList<>();
         if (query != null && !query.isBlank()) {
             parts.add(query.trim());
         }
-        addTerm(parts, filters, TAG, null);
+        addTerm(parts, filters, TAG, "tag");
         addTerm(parts, filters, ARTIST, "artist");
         addTerm(parts, filters, CHARACTER, "character");
         addTerm(parts, filters, PARODY, "parody");
@@ -71,15 +75,30 @@ final class Filters {
         if (language != null && !language.isBlank()) {
             parts.add("language:" + language);
         }
-        return parts.isEmpty() ? "*" : String.join(" ", parts);
+        return parts.isEmpty() ? MATCH_ALL : String.join(" ", parts);
     }
 
+    /** Appends {@code [-]<prefix>:<term>}, keeping a leading {@code -} (exclude) outside the prefix. */
     private static void addTerm(List<String> parts, FilterList filters, String name, String prefix) {
         String state = text(filters, name);
         if (state == null || state.isBlank()) {
             return;
         }
-        parts.add(prefix == null ? state.trim() : prefix + ":" + state.trim());
+        String term = state.trim();
+        String negation = "";
+        if (term.startsWith("-")) {
+            negation = "-";
+            term = term.substring(1).trim();
+        }
+        if (!term.isEmpty()) {
+            parts.add(negation + prefix + ":" + quoteIfNeeded(term));
+        }
+    }
+
+    /** Multi-word values only match as a tag when quoted — {@code tag:"big breasts"}. */
+    private static String quoteIfNeeded(String term) {
+        boolean quoted = term.length() > 1 && term.startsWith("\"") && term.endsWith("\"");
+        return quoted || term.indexOf(' ') < 0 ? term : "\"" + term + "\"";
     }
 
     private static String text(FilterList filters, String name) {
