@@ -1,10 +1,5 @@
 name: Build plugins and publish repository
 
-# Builds plugin JARs and the pf4j-update plugins.json, then force-pushes the result to the
-# `repo` branch. That branch IS the public plugin repository — point a Kodex plugin-repository URL at
-#   https://raw.githubusercontent.com/kodex-app/plugins/refs/heads/repo/plugins.json
-# (the JAR release URLs in plugins.json are relative, resolved against that same directory).
-#
 # Incremental by default: only plugins whose sources changed in the push are rebuilt; every other
 # JAR is carried over byte-identical from the current repo branch (no hash churn). A FULL
 # rebuild happens when anything outside src/ changes (build infrastructure), when the repo
@@ -46,8 +41,10 @@ jobs:
               FULL=0
               # src/<kind>/<dir>/** → <kind>-<dir>, keeping only modules that still exist
               # (a deleted plugin is pruned by updatePluginsRepo without being rebuilt).
-              for m in $(echo "$DIFF" | sed -n 's|^src/\(content\|metadata\)/\([^/]*\)/.*|\1/\2|p' | sort -u); do
-                [ -d "src/$m" ] && CHANGED="$CHANGED,$(echo "$m" | tr '/' '-')"
+              for m in $(echo "$DIFF" | sed -nE 's#^src/(content|metadata)/([^/]+)/.*#\1/\2#p' | sort -u); do
+                if [ -d "src/$m" ]; then
+                  CHANGED="$CHANGED,$(echo "$m" | tr '/' '-')"
+                fi
               done
               CHANGED="${CHANGED#,}"
             fi

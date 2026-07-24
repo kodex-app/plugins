@@ -56,95 +56,103 @@ dependencies {
     pluginHostLibs(libs.slf4j.api)
 }
 
-fun writePluginsRepo(
-    jars: List<File>,
-    outDir: File,
-    defaultVersion: String,
-    baseUrl: String?,
-    sourcesByJar: Map<String, Any?>,
-    logger: Logger,
-) {
-    // The whole directory is published as-is, so start clean — stale JARs from a previous layout
-    // must not ride along.
-    outDir.deleteRecursively()
-    outDir.mkdirs()
-    val entries =
-        jars.filter { it.extension == "jar" }.sortedBy { it.name }.mapNotNull { jar ->
-            val manifest = JarFile(jar).use { it.manifest }
-            val id = manifest?.mainAttributes?.getValue("Plugin-Id")
-            if (id == null) {
-                logger.warn("Skipping ${jar.name}: no Plugin-Id manifest attribute (not a PF4J plugin JAR).")
-                return@mapNotNull null
-            }
-            val attrs = manifest.mainAttributes
-            val name = attrs.getValue("Plugin-Name") ?: id
-            val pluginVersion = attrs.getValue("Plugin-Version") ?: defaultVersion
-            val provider = attrs.getValue("Plugin-Provider") ?: "Kodex"
-            val requires = attrs.getValue("Plugin-Requires")
-            val kind =
-                when {
-                    jar.name.startsWith("content-") -> "CONTENT"
-                    jar.name.startsWith("metadata-") -> "METADATA"
-                    else -> "OTHER"
-                }
-            val sha512 =
-                MessageDigest
-                    .getInstance("SHA-512")
-                    .digest(jar.readBytes())
-                    .joinToString("") { "%02x".format(it) }
-            // JARs are filed into a per-kind folder (content/ metadata/ other/); the release url keeps
-            // the same relative path, so pf4j resolves it against the repository URL as before.
-            val relativePath = "${kind.lowercase()}/${jar.name}"
-            jar.copyTo(outDir.resolve(relativePath), overwrite = true)
-            val url = baseUrl?.let { "${it.trimEnd('/')}/$relativePath" } ?: relativePath
-            // "sha512sum" (not "sha512") is the field pf4j's Sha512SumVerifier reads — an inline hex sum
-            // makes it verify the downloaded JAR's digest (no extra fetch). A wrong key here fails installs.
-            val release = linkedMapOf<String, Any>("version" to pluginVersion, "url" to url, "sha512sum" to sha512)
-            release["date"] = Instant.ofEpochMilli(jar.lastModified()).toString()
-            if (requires != null) release["requires"] = requires
-            val entry =
-                linkedMapOf<String, Any>(
-                    "id" to id,
-                    "name" to name,
-                    "description" to "",
-                    "provider" to provider,
-                    "kind" to kind,
-                )
-            sourcesByJar[jar.name]?.let { entry["sources"] = it }
-            entry["releases"] = listOf(release)
-            entry
-        }
-    outDir.resolve("plugins.json").writeText(JsonOutput.prettyPrint(JsonOutput.toJson(entries)))
-    logger.lifecycle("Wrote ${entries.size} plugin(s) to ${outDir.resolve("plugins.json")}")
-}
+// The publish helpers live in an object, not in script-level functions: a task action that calls a
+// script-level function captures the build script itself, which the configuration cache can't
+// serialize ("cannot serialize Gradle script object references"). An object is a plain class, so the
+// actions below stay cacheable.
+object PluginRepo {
 
-// Runs tools/ExtractSources.java on a forked Java 25 launcher (the Gradle daemon's own JVM is older
-// and can't load the plugins' bytecode) and returns the per-jar Mihon-style source lists. Fails the
-// build on extraction errors — a published plugins.json silently missing its sources would be worse.
-fun extractSources(
-    jars: List<File>,
-    hostLibs: Collection<File>,
-    javaExe: File,
-    extractorSrc: File,
-    outFile: File,
-    logger: Logger,
-): Map<String, Any?> {
-    outFile.parentFile.mkdirs()
-    val classpath = (jars + hostLibs).joinToString(File.pathSeparator)
-    val process =
-        ProcessBuilder(
-            javaExe.absolutePath,
-            "-cp",
-            classpath,
-            extractorSrc.absolutePath,
-            outFile.absolutePath,
-        ).redirectErrorStream(true)
-            .start()
-    val output = process.inputStream.bufferedReader().readText()
-    check(process.waitFor() == 0) { "Source extraction failed:\n$output" }
-    logger.lifecycle(output.trim())
-    @Suppress("UNCHECKED_CAST")
-    return JsonSlurper().parse(outFile) as Map<String, Any?>
+    fun writePluginsRepo(
+        jars: List<File>,
+        outDir: File,
+        defaultVersion: String,
+        baseUrl: String?,
+        sourcesByJar: Map<String, Any?>,
+        logger: Logger,
+    ) {
+        // The whole directory is published as-is, so start clean — stale JARs from a previous layout
+        // must not ride along.
+        outDir.deleteRecursively()
+        outDir.mkdirs()
+        val entries =
+            jars.filter { it.extension == "jar" }.sortedBy { it.name }.mapNotNull { jar ->
+                val manifest = JarFile(jar).use { it.manifest }
+                val id = manifest?.mainAttributes?.getValue("Plugin-Id")
+                if (id == null) {
+                    logger.warn("Skipping ${jar.name}: no Plugin-Id manifest attribute (not a PF4J plugin JAR).")
+                    return@mapNotNull null
+                }
+                val attrs = manifest.mainAttributes
+                val name = attrs.getValue("Plugin-Name") ?: id
+                val pluginVersion = attrs.getValue("Plugin-Version") ?: defaultVersion
+                val provider = attrs.getValue("Plugin-Provider") ?: "Kodex"
+                val requires = attrs.getValue("Plugin-Requires")
+                val kind =
+                    when {
+                        jar.name.startsWith("content-") -> "CONTENT"
+                        jar.name.startsWith("metadata-") -> "METADATA"
+                        else -> "OTHER"
+                    }
+                val sha512 =
+                    MessageDigest
+                        .getInstance("SHA-512")
+                        .digest(jar.readBytes())
+                        .joinToString("") { "%02x".format(it) }
+                // JARs are filed into a per-kind folder (content/ metadata/ other/); the release url keeps
+                // the same relative path, so pf4j resolves it against the repository URL as before.
+                val relativePath = "${kind.lowercase()}/${jar.name}"
+                jar.copyTo(outDir.resolve(relativePath), overwrite = true)
+                val url = baseUrl?.let { "${it.trimEnd('/')}/$relativePath" } ?: relativePath
+                // "sha512sum" (not "sha512") is the field pf4j's Sha512SumVerifier reads — an inline hex sum
+                // makes it verify the downloaded JAR's digest (no extra fetch). A wrong key here fails installs.
+                val release = linkedMapOf<String, Any>("version" to pluginVersion, "url" to url, "sha512sum" to sha512)
+                release["date"] = Instant.ofEpochMilli(jar.lastModified()).toString()
+                if (requires != null) release["requires"] = requires
+                val entry =
+                    linkedMapOf<String, Any>(
+                        "id" to id,
+                        "name" to name,
+                        "description" to "",
+                        "provider" to provider,
+                        "kind" to kind,
+                    )
+                sourcesByJar[jar.name]?.let { entry["sources"] = it }
+                entry["releases"] = listOf(release)
+                entry
+            }
+        outDir.resolve("plugins.json").writeText(JsonOutput.prettyPrint(JsonOutput.toJson(entries)))
+        logger.lifecycle("Wrote ${entries.size} plugin(s) to ${outDir.resolve("plugins.json")}")
+    }
+
+    // Runs tools/ExtractSources.java on a forked Java 25 launcher (the Gradle daemon's own JVM is older
+    // and can't load the plugins' bytecode) and returns the per-jar Mihon-style source lists. Fails the
+    // build on extraction errors — a published plugins.json silently missing its sources would be worse.
+    fun extractSources(
+        jars: List<File>,
+        hostLibs: Collection<File>,
+        javaExe: File,
+        extractorSrc: File,
+        outFile: File,
+        logger: Logger,
+    ): Map<String, Any?> {
+        outFile.parentFile.mkdirs()
+        val classpath = (jars + hostLibs).joinToString(File.pathSeparator)
+        val process =
+            ProcessBuilder(
+                javaExe.absolutePath,
+                "-cp",
+                classpath,
+                extractorSrc.absolutePath,
+                outFile.absolutePath,
+            ).redirectErrorStream(true)
+                .start()
+        val output = process.inputStream.bufferedReader().readText()
+        check(process.waitFor() == 0) { "Source extraction failed:\n$output" }
+        logger.lifecycle(output.trim())
+        @Suppress("UNCHECKED_CAST")
+        return JsonSlurper().parse(outFile) as Map<String, Any?>
+    }
+
 }
 
 // Public repo of the in-tree plugins. Serve build/plugins-repo over HTTP and point a
@@ -162,23 +170,23 @@ tasks.register("generatePluginsJson") {
         project.extensions.getByType(JavaToolchainService::class.java).launcherFor {
             languageVersion = JavaLanguageVersion.of(25)
         }
+    // Resolved at execution, but captured here: the Configuration itself isn't serializable.
+    val hostLibs = pluginHostLibs.incoming.files
     inputs.files(devPlugins)
     inputs.file(extractorSrc)
     outputs.dir(outDir)
-    // Shared helper is a script member; keep this rarely-run publish task off the configuration cache.
-    notCompatibleWithConfigurationCache("Manual publish task; uses a script-level helper.")
     doLast {
         val jars = pluginJars.get().map { it.asFile }
         val sourcesByJar =
-            extractSources(
+            PluginRepo.extractSources(
                 jars,
-                pluginHostLibs.files,
+                hostLibs.files,
                 java25.get().executablePath.asFile,
                 extractorSrc.asFile,
                 sourcesJson.get().asFile,
                 logger,
             )
-        writePluginsRepo(jars, outDir.get().asFile, defaultVersion, null, sourcesByJar, logger)
+        PluginRepo.writePluginsRepo(jars, outDir.get().asFile, defaultVersion, null, sourcesByJar, logger)
     }
 }
 
@@ -197,10 +205,16 @@ tasks.register("updatePluginsRepo") {
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() } ?: emptyList()
     val moduleNames = subprojects.map { it.name }.toSet()
-    changed.forEach {
-        require(it in moduleNames) { "Unknown plugin module '$it' (expected a src/{content,metadata} subproject)" }
-        dependsOn(":$it:jar")
-    }
+    // The rebuilt JARs are located here, at configuration time — reaching through project(":x") from a
+    // task action would drag a Project into the configuration cache (and breaks under Gradle 10).
+    val freshJars =
+        changed.associateWith { name ->
+            require(name in moduleNames) {
+                "Unknown plugin module '$name' (expected a src/{content,metadata} subproject)"
+            }
+            dependsOn(":$name:jar")
+            project(":$name").tasks.named("jar", Jar::class.java).flatMap { it.archiveFile }
+        }
     val previousRepoProp = providers.gradleProperty("previousRepo")
     val defaultVersion = version.toString()
     val outDir = layout.buildDirectory.dir("plugins-repo")
@@ -210,9 +224,10 @@ tasks.register("updatePluginsRepo") {
         project.extensions.getByType(JavaToolchainService::class.java).launcherFor {
             languageVersion = JavaLanguageVersion.of(25)
         }
+    // Resolved at execution, but captured here: the Configuration itself isn't serializable.
+    val hostLibs = pluginHostLibs.incoming.files
     // Relative -P paths must resolve against the project dir, not the Gradle daemon's working directory.
     val rootDirFile = layout.projectDirectory.asFile
-    notCompatibleWithConfigurationCache("CI publish task; uses a script-level helper.")
     doLast {
         val prevPath =
             previousRepoProp.orNull
@@ -232,15 +247,8 @@ tasks.register("updatePluginsRepo") {
                 .filter { moduleOf(it.name) !in changed }
                 .toList() // replaced by the fresh build below
         val fresh =
-            changed.map { name ->
-                val libs =
-                    project(":$name")
-                        .layout.buildDirectory
-                        .dir("libs")
-                        .get()
-                        .asFile
-                libs.listFiles()?.filter { it.extension == "jar" }?.maxByOrNull { it.lastModified() }
-                    ?: error("No jar built for :$name under $libs")
+            freshJars.map { (name, jar) ->
+                jar.get().asFile.also { file -> require(file.isFile) { "No jar built for :$name" } }
             }
         val jars = (kept + fresh).sortedBy { it.name }
         logger.lifecycle(
@@ -248,15 +256,15 @@ tasks.register("updatePluginsRepo") {
                 "(${moduleNames.size} modules in the build).",
         )
         val sourcesByJar =
-            extractSources(
+            PluginRepo.extractSources(
                 jars,
-                pluginHostLibs.files,
+                hostLibs.files,
                 java25.get().executablePath.asFile,
                 extractorSrc.asFile,
                 sourcesJson.get().asFile,
                 logger,
             )
-        writePluginsRepo(jars, outDir.get().asFile, defaultVersion, null, sourcesByJar, logger)
+        PluginRepo.writePluginsRepo(jars, outDir.get().asFile, defaultVersion, null, sourcesByJar, logger)
     }
 }
 
@@ -275,14 +283,13 @@ tasks.register("generatePrivatePluginsJson") {
     val defaultOut = layout.buildDirectory.dir("private-plugins-repo")
     // Relative -P paths must resolve against the project dir, not the Gradle daemon's working directory.
     val rootDir = layout.projectDirectory.asFile
-    notCompatibleWithConfigurationCache("Manual publish task; uses a script-level helper.")
     doLast {
-        fun resolve(path: String) = File(path).let { if (it.isAbsolute) it else rootDir.resolve(path) }
+        fun resolve(path: String) = File(path).let { f -> if (f.isAbsolute) f else rootDir.resolve(path) }
         val jarsDir = resolve(jarsDirProp.orNull ?: error("Set -PjarsDir=<dir containing plugin .jar files>"))
         require(jarsDir.isDirectory) { "jarsDir is not a directory: $jarsDir" }
         val jars = jarsDir.listFiles()?.toList().orEmpty()
         val outDir = outDirProp.orNull?.let { resolve(it) } ?: defaultOut.get().asFile
         // Pre-built external jars may target a different SPI; no source extraction here.
-        writePluginsRepo(jars, outDir, defaultVersion, baseUrlProp.orNull, emptyMap(), logger)
+        PluginRepo.writePluginsRepo(jars, outDir, defaultVersion, baseUrlProp.orNull, emptyMap(), logger)
     }
 }
