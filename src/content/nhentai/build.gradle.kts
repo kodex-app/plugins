@@ -2,9 +2,7 @@ plugins {
     java
 }
 
-// 1.0.1: ported off the retired v1 API onto /api/v2 (the old endpoints now answer 403).
-// 1.0.2: language() left null (mixed-language) to match Mihon's "all" nhentai source; id realigned.
-version = "1.0.2"
+version = "1.0.3"
 
 dependencies {
     compileOnly(libs.kodex.spi)

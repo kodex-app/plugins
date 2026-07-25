@@ -21,7 +21,6 @@ final class Filters {
     static final String MATCH_ALL = "*";
 
     static final String SORT = "Sort by";
-    static final String LANGUAGE = "Language";
     static final String TAG = "Tag";
     static final String ARTIST = "Artist";
     static final String CHARACTER = "Character";
@@ -34,15 +33,12 @@ final class Filters {
     private static final List<String> SORT_VALUES =
         List.of("date", "popular-today", "popular-week", "popular-month", "popular");
 
-    private static final List<String> LANGUAGE_LABELS = List.of("All", "English", "Japanese", "Chinese");
-    private static final List<String> LANGUAGE_VALUES = List.of("", "english", "japanese", "chinese");
-
     static FilterList defaultFilterList() {
+        // No language filter: language is chosen by picking the source (English/Japanese/Chinese).
         return FilterList.of(
             new Filter.Header("Filters are combined with text search"),
             new Filter.Separator(""),
             new Filter.Select(SORT, SORT_LABELS),
-            new Filter.Select(LANGUAGE, LANGUAGE_LABELS),
             new Filter.Separator(""),
             new Filter.Header("Tag filters (exact name, e.g. \"sole male\"); prefix with - to exclude"),
             new Filter.TextFilter(TAG),
@@ -71,10 +67,6 @@ final class Filters {
         addTerm(parts, filters, CHARACTER, "character");
         addTerm(parts, filters, PARODY, "parody");
         addTerm(parts, filters, GROUP, "group");
-        String language = selected(filters, LANGUAGE, LANGUAGE_VALUES);
-        if (language != null && !language.isBlank()) {
-            parts.add("language:" + language);
-        }
         return parts.isEmpty() ? MATCH_ALL : String.join(" ", parts);
     }
 

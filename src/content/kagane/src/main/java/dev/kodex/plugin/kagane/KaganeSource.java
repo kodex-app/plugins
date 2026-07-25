@@ -524,7 +524,7 @@ public abstract class KaganeSource implements ContentSource {
         }
     }
 
-    // ---- Concrete per-language extensions (mirror KaganeFactory) ---------------------------------
+    // ---- Concrete per-language extensions ---------------------------------
 
     @Extension public static final class English extends KaganeSource { public English() { super("en", List.of("en")); } }
     @Extension public static final class Japanese extends KaganeSource { public Japanese() { super("ja", List.of("ja")); } }

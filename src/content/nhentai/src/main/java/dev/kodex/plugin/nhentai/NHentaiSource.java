@@ -32,17 +32,18 @@ import java.util.Map;
  * the site's own gallery paths ({@code /g/<id>/}), which is also what Mihon stores, so backup
  * imports need no translation.
  *
- * <p>The catalogue is <b>mixed-language</b> (English, Japanese, Chinese, …), so {@link #language()}
- * is left {@code null} — matching Mihon's single "all"-language nhentai source, which keeps
- * {@link #id()} equal to Mihon's. Callers narrow to one language with the {@code Language} search
- * filter, not by the source's own tag.
+ * <p>nhentai serves many languages, so — like Mihon (and the {@code kagane}/{@code hentaifox}
+ * plugins here) — it is exposed as one <b>per-language source per {@code @Extension}</b> rather than
+ * a single mixed-language one: {@link English}, {@link Japanese}, {@link Chinese}. Each narrows
+ * every browse/search to its own {@link #mangaLang() language:} slug and reports its own BCP-47
+ * {@link #language()}, so each gets its own Mihon-aligned {@link #id()} and shows up as a distinct
+ * entry in Mihon's "All" extension list.
  *
  * <p>Speaks the <b>v2</b> API ({@code /api/v2}, documented at {@code /api/v2/docs}): the v1
  * endpoints the Mihon extension used now answer {@code 403 "Use new API"}. v2 also stopped hardcoding
  * image hosts — a gallery reports bare paths, and {@code /api/v2/cdn} names the servers they hang off.
  */
-@Extension
-public class NHentaiSource implements ContentSource {
+public abstract class NHentaiSource implements ContentSource {
 
     private static final String BASE_URL = "https://nhentai.net";
     private static final String API_URL = BASE_URL + "/api/v2";
@@ -71,13 +72,17 @@ public class NHentaiSource implements ContentSource {
         return p != null ? p.httpClient() : FALLBACK;
     }
 
+    /** The nhentai {@code language:} slug this source narrows to ({@code english}/{@code japanese}/{@code chinese}). */
+    protected abstract String mangaLang();
+
+    /** This source's BCP-47 language tag ({@code en}/{@code ja}/{@code zh}) — drives {@link #id()}. */
+    @Override
+    public abstract String language();
+
     @Override
     public String displayName() {
         return "NHentai";
     }
-
-    // language() is intentionally not overridden: nhentai serves many languages, so the SPI default
-    // (null = mixed-language) is correct, and id() then keys on "all" — Mihon's nhentai id.
 
     @Override
     public boolean adultContent() {
@@ -96,37 +101,43 @@ public class NHentaiSource implements ContentSource {
 
     // ---- Browse / search -------------------------------------------------------------------------
 
+    // Every feed goes through /search so the source's language: slug can narrow it; the all-language
+    // /galleries and /galleries/popular endpoints can't be scoped to a single language.
+
     @Override
     public SeriesPage popular(int page, ProviderSettings settings) {
-        // /galleries/popular returns one unpaged list of today's picks; search sorts the whole catalogue.
-        HttpUrl url = HttpUrl.get(API_URL + "/search").newBuilder()
-            .addQueryParameter("query", Filters.MATCH_ALL)
-            .addQueryParameter("sort", "popular")
-            .addQueryParameter("page", String.valueOf(Math.max(1, page)))
-            .build();
-        return galleryList(url.toString());
+        return searchGalleries(withLanguage(Filters.MATCH_ALL), "popular", page);
     }
 
     @Override
     public SeriesPage latest(int page, ProviderSettings settings) {
-        HttpUrl url = HttpUrl.get(API_URL + "/galleries").newBuilder()
-            .addQueryParameter("page", String.valueOf(Math.max(1, page)))
-            .build();
-        return galleryList(url.toString());
+        return searchGalleries(withLanguage(Filters.MATCH_ALL), "date", page);
     }
 
     @Override
     public SeriesPage search(String query, int page, FilterList filters, ProviderSettings settings) {
         FilterList effective = (filters == null || filters.filters().isEmpty()) ? getFilterList() : filters;
-        HttpUrl.Builder url = HttpUrl.get(API_URL + "/search").newBuilder();
-        // `query` is mandatory and must be non-empty — Filters yields the match-all token when nothing is set.
-        url.addQueryParameter("query", Filters.combineQuery(query, effective));
-        String sort = Filters.sort(effective);
+        return searchGalleries(withLanguage(Filters.combineQuery(query, effective)), Filters.sort(effective), page);
+    }
+
+    private SeriesPage searchGalleries(String query, String sort, int page) {
+        HttpUrl.Builder url = HttpUrl.get(API_URL + "/search").newBuilder()
+            // `query` is mandatory and must be non-empty — withLanguage always yields at least language:<slug>.
+            .addQueryParameter("query", query);
         if (sort != null) {
             url.addQueryParameter("sort", sort);
         }
         url.addQueryParameter("page", String.valueOf(Math.max(1, page)));
         return galleryList(url.build().toString());
+    }
+
+    /** Appends this source's {@code language:<slug>} token, replacing the bare match-all query outright. */
+    private String withLanguage(String query) {
+        String tag = "language:" + mangaLang();
+        if (query == null || query.isBlank() || query.equals(Filters.MATCH_ALL)) {
+            return tag;
+        }
+        return query + " " + tag;
     }
 
     /** Reads a {@code PaginatedResponse[GalleryListItem]} — the shape both /search and /galleries return. */
@@ -393,5 +404,49 @@ public class NHentaiSource implements ContentSource {
             }
         }
         throw new ProviderRateLimitException("nhentai rate limit (HTTP 429)", retryAfter);
+    }
+
+    // ---- Per-language sources (one @Extension each, like Mihon's NHentaiFactory) -----------------
+
+    /** nhentai's English galleries ({@code language:english}). */
+    @Extension
+    public static final class English extends NHentaiSource {
+        @Override
+        protected String mangaLang() {
+            return "english";
+        }
+
+        @Override
+        public String language() {
+            return "en";
+        }
+    }
+
+    /** nhentai's Japanese galleries ({@code language:japanese}). */
+    @Extension
+    public static final class Japanese extends NHentaiSource {
+        @Override
+        protected String mangaLang() {
+            return "japanese";
+        }
+
+        @Override
+        public String language() {
+            return "ja";
+        }
+    }
+
+    /** nhentai's Chinese galleries ({@code language:chinese}). */
+    @Extension
+    public static final class Chinese extends NHentaiSource {
+        @Override
+        protected String mangaLang() {
+            return "chinese";
+        }
+
+        @Override
+        public String language() {
+            return "zh";
+        }
     }
 }

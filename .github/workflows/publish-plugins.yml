@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0 # change detection diffs against the pre-push commit
 
@@ -56,13 +56,13 @@ jobs:
       # Gradle runs on JDK 21; the Java 25 toolchain the plugins target is auto-downloaded by the
       # foojay resolver plugin (see settings.gradle.kts).
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Build plugin repository (full)
         if: steps.scope.outputs.full == '1'
