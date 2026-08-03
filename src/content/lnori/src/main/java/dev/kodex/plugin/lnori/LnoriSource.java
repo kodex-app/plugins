@@ -244,11 +244,16 @@ public class LnoriSource implements ContentSource {
             volumes.merge(href, text, (existing, next) -> next.length() > existing.length() ? next : existing);
         }
 
+        // Several entries can parse to the same vol-N (side stories, reissues, split parts), which used to
+        // yield multiple identically-named "Volume N" rows. Count them first so repeats can be qualified
+        // with their own slug; the core keeps them in this list's order regardless.
+        Map<Integer, Integer> seenPerNumber = new LinkedHashMap<>();
         int index = 0;
         for (Map.Entry<String, String> vol : volumes.entrySet()) {
             index++;
             Integer volNum = volumeNumber(vol.getKey());
-            chapters.add(new SourceChapter(strip(vol.getKey()), volumeName(vol.getKey(), vol.getValue()),
+            int occurrence = volNum == null ? 1 : seenPerNumber.merge(volNum, 1, Integer::sum);
+            chapters.add(new SourceChapter(strip(vol.getKey()), volumeName(vol.getKey(), vol.getValue(), occurrence),
                 (double) (volNum != null ? volNum : index), null, null, Map.of()));
         }
         return chapters;
@@ -272,12 +277,18 @@ public class LnoriSource implements ContentSource {
         return last;
     }
 
-    private static String volumeName(String href, String text) {
+    /**
+     * Display name for a volume. {@code occurrence} is how many entries with this same volume number have
+     * been seen so far (1 for the first): the site can list several books that all parse to {@code vol-N},
+     * and naming them all "Volume N" left rows indistinguishable, so repeats are qualified with the part
+     * of their slug that actually differs.
+     */
+    private static String volumeName(String href, String text, int occurrence) {
         // Prefer the slug's volume number ("Volume N", matching the site) — the hero "Start Reading" link's
         // text is the full series title, which the old "longest text" heuristic wrongly picked for volume 1.
         Integer volNum = volumeNumber(href);
         if (volNum != null) {
-            return "Volume " + volNum;
+            return occurrence <= 1 ? "Volume " + volNum : "Volume " + volNum + " (" + volumeQualifier(href, occurrence) + ")";
         }
         String clean = text == null ? "" : text.replaceAll("(?i)Start Reading", "").trim();
         if (!clean.isEmpty()) {
@@ -292,6 +303,26 @@ public class LnoriSource implements ContentSource {
             }
         }
         return sb.toString().trim();
+    }
+
+    /**
+     * A short label distinguishing repeated volume numbers: the slug's words with the series/volume noise
+     * dropped (e.g. {@code .../side-stories-vol-3} → "Side Stories"). Falls back to the occurrence index
+     * when nothing distinctive is left, so the name is always unique within the series.
+     */
+    private static String volumeQualifier(String href, int occurrence) {
+        String[] parts = href.replaceAll("/+$", "").split("/");
+        String slug = parts.length > 0 ? parts[parts.length - 1] : "";
+        StringBuilder sb = new StringBuilder();
+        for (String w : slug.split("-")) {
+            // Drop the volume marker itself and its number — that's the part they all share.
+            if (w.isEmpty() || w.matches("(?i)vol|volume") || w.matches("\\d+")) {
+                continue;
+            }
+            sb.append(Character.toUpperCase(w.charAt(0))).append(w.substring(1)).append(' ');
+        }
+        String qualifier = sb.toString().trim();
+        return qualifier.isEmpty() ? "#" + occurrence : qualifier;
     }
 
     // ---- Content (BOOK) --------------------------------------------------------------------------
