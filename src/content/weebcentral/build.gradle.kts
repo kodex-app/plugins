@@ -2,6 +2,8 @@ plugins {
     java
 }
 
+version = "1.0.1" // scanlator badge + season chapter numbering
+
 dependencies {
     compileOnly(libs.kodex.spi)
     compileOnly(libs.jsoup) // provided by the host classloader at runtime

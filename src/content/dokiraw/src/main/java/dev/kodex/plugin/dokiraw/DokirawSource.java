@@ -31,7 +31,8 @@ import java.util.regex.Pattern;
 @Extension
 public class DokirawSource implements ContentSource {
 
-    private static final String BASE_URL = "https://dokiraw.cloud";
+    // Domain moved 2026-08 (upstream b19b79d13, "Update domain for 9 extensions"); .cloud no longer resolves.
+    private static final String BASE_URL = "https://dokiraw.work";
     private static final String USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
     private static final Pattern NUMBER = Pattern.compile("(\\d+(?:\\.\\d+)?)");

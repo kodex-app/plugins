@@ -2,6 +2,8 @@ plugins {
     java
 }
 
+version = "1.0.1" // domain moved to dokiraw.work
+
 dependencies {
     compileOnly(libs.kodex.spi)
     compileOnly(libs.jsoup)

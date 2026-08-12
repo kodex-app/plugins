@@ -17,6 +17,7 @@ import okhttp3.ResponseBody;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.pf4j.Extension;
 
 import java.net.URI;
@@ -177,7 +178,17 @@ public class WeebCentralSource implements ContentSource {
         if (doc == null) {
             return chapters;
         }
-        for (Element a : doc.select("div[x-data] > a")) {
+        // The site lists chapters newest-first.
+        Elements entries = doc.select("div[x-data] > a");
+        // Series that number by season ("S2 - 14") can't be ordered from the name alone — the same
+        // number repeats each season. Upstream falls back to the listing position for those, which is
+        // reliable precisely because the list is a strict descending sequence.
+        boolean useIndexing = entries.stream().anyMatch(e -> {
+            Element el = e.selectFirst("span.flex > span");
+            return el != null && SEASON.matcher(el.text()).find();
+        });
+        for (int i = 0; i < entries.size(); i++) {
+            Element a = entries.get(i);
             Element nameEl = a.selectFirst("span.flex > span");
             String name = nameEl != null ? nameEl.text() : a.text();
             String href = relative(a.attr("abs:href"));
@@ -186,19 +197,18 @@ public class WeebCentralSource implements ContentSource {
             if (time != null) {
                 date = parseDate(time.attr("datetime"));
             }
-            String scanlator = null;
-            Element svg = a.selectFirst("svg");
-            if (svg != null) {
-                scanlator = switch (svg.attr("stroke")) {
-                    case "#d8b4fe" -> "Official";
-                    case "#4C4D54" -> "Unknown";
-                    default -> null;
-                };
-            }
-            chapters.add(new SourceChapter(href, name, parseNumber(name), scanlator, date, Map.of()));
+            Double number = useIndexing ? (double) (entries.size() - i) : parseNumber(name);
+            // The official badge became an <img> (it used to be an <svg> identified by stroke colour,
+            // which stopped matching after the site's redesign).
+            boolean official = a.select("img").stream()
+                .anyMatch(img -> img.attr("src").toLowerCase(Locale.ROOT).contains("official"));
+            chapters.add(new SourceChapter(href, name, number, official ? "Official" : "Unknown", date, Map.of()));
         }
         return chapters;
     }
+
+    /** Chapter names that carry a season marker, e.g. {@code "Season 2"} / {@code "S2"}. */
+    private static final Pattern SEASON = Pattern.compile("(Season|S)\\s*\\d+", Pattern.CASE_INSENSITIVE);
 
     /** {@code /series/<id>/<slug>} → {@code /series/<id>/full-chapter-list}. */
     private static String chapterListPath(String seriesExternalId) {

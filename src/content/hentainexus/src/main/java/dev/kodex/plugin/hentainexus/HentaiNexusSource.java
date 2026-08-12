@@ -2,6 +2,7 @@ package dev.kodex.plugin.hentainexus;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import dev.kodex.spi.PluginConfigSchema;
 import dev.kodex.spi.ProviderSettings;
 import dev.kodex.spi.content.ContentSource;
 import dev.kodex.spi.content.SearchResult;
@@ -41,6 +42,9 @@ public class HentaiNexusSource implements ContentSource {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Pattern TAG_COUNT = Pattern.compile("\\s*\\([\\d,]+\\)$");
+    /** "source" is the original upload and needs a logged-in account; webp is the safe default. */
+    private static final String PREF_IMAGE_FORMAT = "imageFormat";
+    private static final String IMAGE_FORMAT_DEFAULT = "webp";
     private static final Pattern INIT_READER = Pattern.compile("initReader\\(\"([^\"]*)\"");
     private static final DateTimeFormatter PUBLISHED = DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.US);
 
@@ -250,12 +254,11 @@ public class HentaiNexusSource implements ContentSource {
                 if (!"image".equals(node.path("type").asText())) {
                     continue;
                 }
-                // Newer entries may carry only "image_fallback" instead of "image" (upstream #16960).
-                String image = node.path("image").asText(null);
-                if (image == null || image.isBlank()) {
-                    image = node.path("image_fallback").asText(null);
-                }
-                if (image != null && !image.isBlank()) {
+                // Upstream (#17943) split the single "image" field into one per encoding. Read the
+                // configured quality, then fall back down the chain — "source" needs an account, so an
+                // anonymous reader must still get something rather than a blank page.
+                String image = firstNonBlank(node, imageField(settings), "image_fallback", "image", "image_avif");
+                if (image != null) {
                     pages.add(new SourcePage(index++, image, headers));
                 }
             }
@@ -268,6 +271,34 @@ public class HentaiNexusSource implements ContentSource {
     @Override
     public Map<String, String> coverRequestHeaders() {
         return Map.of("User-Agent", USER_AGENT, "Referer", BASE_URL + "/");
+    }
+
+    /** JSON field holding the configured encoding; mirrors upstream's imageField(). */
+    private static String imageField(ProviderSettings settings) {
+        String format = settings == null ? IMAGE_FORMAT_DEFAULT : settings.getString(PREF_IMAGE_FORMAT, IMAGE_FORMAT_DEFAULT);
+        return switch (format) {
+            case "source" -> "image_source";
+            case "avif" -> "image_avif";
+            default -> "image_fallback";
+        };
+    }
+
+    /** First of {@code fields} present and non-blank on {@code node}, or null when none are. */
+    private static String firstNonBlank(JsonNode node, String... fields) {
+        for (String field : fields) {
+            String value = node.path(field).asText(null);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public PluginConfigSchema configSchema() {
+        return new PluginConfigSchema(List.of(new PluginConfigSchema.Field(
+            PREF_IMAGE_FORMAT, "Image quality", PluginConfigSchema.FieldType.ENUM, false,
+            IMAGE_FORMAT_DEFAULT, List.of("webp", "avif", "source"))));
     }
 
     // ---- Helpers ---------------------------------------------------------------------------------
