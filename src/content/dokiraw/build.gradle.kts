@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-version = "1.0.1" // domain moved to dokiraw.work
+version = "1.0.2" // domain moved to dokiraw.beer
 
 dependencies {
     compileOnly(libs.kodex.spi)
