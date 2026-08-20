@@ -27,6 +27,8 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -45,6 +47,10 @@ public abstract class ComickSource implements ContentSource {
     /** {@code /api/comics/top} is a fixed six-page carousel, not an open-ended feed. */
     private static final int POPULAR_PAGES = 6;
     private static final int MIN_QUERY_LENGTH = 3;
+    /** How many distinct series a "latest" page aims for before it stops reading further API pages. */
+    private static final int MIN_LATEST_ITEMS = 20;
+    /** A ceiling on that, so a stretch of same-series uploads can't turn one page into a long crawl. */
+    private static final int MAX_LATEST_FETCHES = 4;
     private static final String USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -77,6 +83,16 @@ public abstract class ComickSource implements ContentSource {
 
     private record CursorState(String key, int nextPage, String cursor) {
     }
+
+    /**
+     * Slugs already shown during the current "latest" scroll, so a series that spans several pages of the
+     * chapter feed is listed once. Reset whenever page 1 is requested, which is how the reader signals a
+     * fresh scroll.
+     */
+    private final Set<String> latestSeen = ConcurrentHashMap.newKeySet();
+
+    /** How far into the chapter feed the current scroll has read, independent of the requested page. */
+    private volatile int latestApiPage = 1;
 
     private final String lang;
 
@@ -139,14 +155,66 @@ public abstract class ComickSource implements ContentSource {
         return new SeriesPage(mapComics(root.path("data")), index < POPULAR_PAGES);
     }
 
+    /**
+     * The "latest" feed is a feed of <em>chapters</em>, so a series that just uploaded forty chapters
+     * occupies forty consecutive rows — one observed page of 100 rows held only 13 distinct series, and
+     * the next page repeated 6 of them. Mihon tolerates that; a {@link SeriesPage} is a page of series,
+     * so the slugs are collapsed here, remembering what earlier pages already showed.
+     *
+     * <p>{@code hasNextPage} still reflects whether the <em>API</em> page was full rather than how many
+     * distinct series survived, so a page that dedupes down to a handful still loads the next one.
+     */
     @Override
     public SeriesPage latest(int page, ProviderSettings settings) {
-        JsonNode root = getJson(BASE_URL + "/api/chapters/latest?order=new&page=" + Math.max(1, page));
-        if (root == null) {
-            return SeriesPage.empty();
+        int index = Math.max(1, page);
+        // Preferred: the comic-granular search feed ordered by upload time, which is what Comick's other
+        // Mihon extension (comickfan) uses for "latest". It paginates properly and never repeats a series.
+        HttpUrl.Builder url = HttpUrl.get(BASE_URL + "/api/search").newBuilder();
+        url.addQueryParameter("order_by", "uploaded");
+        url.addQueryParameter("order_direction", "desc");
+        url.addQueryParameter("showAll", "false");
+        url.addQueryParameter("exclude_mylist", "false");
+        url.addQueryParameter("type", "comic");
+        SeriesPage viaSearch = cursorFeed(url, index);
+        if (viaSearch != null) {
+            return viaSearch;
         }
-        JsonNode data = root.path("data");
-        return new SeriesPage(mapComics(data), data.size() == LATEST_PAGE_SIZE);
+        // /api/search sits behind a Cloudflare challenge, so without a solver fall back to the chapter feed.
+        return latestFromChapterFeed(index);
+    }
+
+    /**
+     * The chapter-granular fallback. This feed lists <em>chapters</em>, so one series occupies a row per
+     * uploaded chapter, and the endpoint stops honouring {@code page} after a few pages — measured, it
+     * exposes only ~31 distinct series and then repeats page 1 forever. So slugs are deduplicated, and the
+     * feed is declared finished as soon as a fetch yields nothing new, rather than scrolling endlessly
+     * over the same titles.
+     */
+    private SeriesPage latestFromChapterFeed(int page) {
+        if (page == 1) {
+            // A fresh scroll starts a fresh dedup window, back at the head of the feed.
+            latestSeen.clear();
+            latestApiPage = 1;
+        }
+
+        List<SearchResult> results = new ArrayList<>();
+        boolean feedContinues = true;
+        // Deduping can consume a whole API page, so keep pulling until the page is worth showing.
+        for (int attempt = 0; attempt < MAX_LATEST_FETCHES && results.size() < MIN_LATEST_ITEMS; attempt++) {
+            JsonNode root = getJson(BASE_URL + "/api/chapters/latest?order=new&page=" + latestApiPage++);
+            if (root == null) {
+                feedContinues = false;
+                break;
+            }
+            JsonNode data = root.path("data");
+            List<SearchResult> fresh = mapComics(data, latestSeen);
+            results.addAll(fresh);
+            if (data.size() < LATEST_PAGE_SIZE || fresh.isEmpty()) {
+                feedContinues = false; // end of the feed, or it has begun repeating itself
+                break;
+            }
+        }
+        return new SeriesPage(results, feedContinues && !results.isEmpty());
     }
 
     // ---- Filters ---------------------------------------------------------------------------------
@@ -235,23 +303,33 @@ public abstract class ComickSource implements ContentSource {
         }
         url.addQueryParameter("type", "comic");
 
-        // The query itself identifies the cursor chain; a different query restarts from page 1.
+        SeriesPage results = cursorFeed(url, index);
+        return results == null ? SeriesPage.empty() : results;
+    }
+
+    /**
+     * Reads one page of a cursor-paginated {@code /api/search} feed. Comick pages this endpoint with an
+     * opaque cursor rather than an offset, so page N+1 can only be fetched once page N has been read; the
+     * query string identifies the chain, and a different one restarts from page 1.
+     *
+     * @return the page, or {@code null} when the request itself failed — which lets a caller fall back
+     */
+    private SeriesPage cursorFeed(HttpUrl.Builder url, int page) {
         String key = url.build().toString();
-        if (index > 1) {
+        if (page > 1) {
             CursorState state = cursorState;
-            if (state == null || !state.key().equals(key) || state.nextPage() != index) {
+            if (state == null || !state.key().equals(key) || state.nextPage() != page) {
                 // No cursor for this page (non-sequential paging, or a different query) — nothing to fetch.
                 return SeriesPage.empty();
             }
             url.addQueryParameter("cursor", state.cursor());
         }
-
         JsonNode root = getJson(url.build().toString());
         if (root == null) {
-            return SeriesPage.empty();
+            return null;
         }
         String nextCursor = text(root.get("next_cursor"));
-        cursorState = nextCursor == null ? null : new CursorState(key, index + 1, nextCursor);
+        cursorState = nextCursor == null ? null : new CursorState(key, page + 1, nextCursor);
         return new SeriesPage(mapComics(root.path("data")), nextCursor != null);
     }
 
@@ -358,10 +436,18 @@ public abstract class ComickSource implements ContentSource {
     }
 
     private List<SearchResult> mapComics(JsonNode array) {
+        return mapComics(array, null);
+    }
+
+    /**
+     * Maps browse rows to series. When {@code seen} is non-null a slug is emitted only the first time it
+     * appears, which collapses the chapter-granular "latest" feed down to one row per series.
+     */
+    private List<SearchResult> mapComics(JsonNode array, Set<String> seen) {
         List<SearchResult> results = new ArrayList<>();
         for (JsonNode comic : array) {
             String slug = text(comic.get("slug"));
-            if (slug == null) {
+            if (slug == null || (seen != null && !seen.add(slug))) {
                 continue;
             }
             results.add(new SearchResult(id(), slug, orElse(text(comic.get("title")), slug), null,
