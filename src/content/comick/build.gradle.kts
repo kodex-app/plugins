@@ -2,6 +2,8 @@ plugins {
     java
 }
 
+version = "1.0.1" // latest feed: comic-granular /api/search, deduped chapter-feed fallback
+
 dependencies {
     compileOnly(libs.kodex.spi)
     compileOnly(libs.jsoup) // details/page-list payloads are embedded in the HTML (host-provided)
