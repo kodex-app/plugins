@@ -76,7 +76,7 @@ public class WebNovelNovelSource implements ContentSource {
     /** Named apart from the comics source so the two are tellable apart in a source list. */
     @Override
     public String displayName() {
-        return "Webnovel (Novels)";
+        return "WebNovel (Novels)";
     }
 
     @Override
@@ -385,7 +385,7 @@ public class WebNovelNovelSource implements ContentSource {
         Element body = doc.selectFirst(".cha-words");
         if (body == null) {
             LOG.log(System.Logger.Level.WARNING,
-                () -> "Webnovel: no chapter body at " + BASE_URL + chapterExternalId);
+                () -> "WebNovel: no chapter body at " + BASE_URL + chapterExternalId);
             return new SourceChapterContent(heading == null ? null : heading.text().trim(), "");
         }
         return new SourceChapterContent(
@@ -426,12 +426,12 @@ public class WebNovelNovelSource implements ContentSource {
             String payload = body != null ? body.string() : null;
             if (!res.isSuccessful() || payload == null) {
                 int code = res.code();
-                LOG.log(System.Logger.Level.WARNING, () -> "Webnovel HTTP " + code + " for " + url);
+                LOG.log(System.Logger.Level.WARNING, () -> "WebNovel HTTP " + code + " for " + url);
                 return null;
             }
             return Jsoup.parse(payload, url);
         } catch (Exception e) {
-            LOG.log(System.Logger.Level.WARNING, () -> "Webnovel request failed for " + url, e);
+            LOG.log(System.Logger.Level.WARNING, () -> "WebNovel request failed for " + url, e);
             return null; // fail soft, per the SPI contract
         }
     }

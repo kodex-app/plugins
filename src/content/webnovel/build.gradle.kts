@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-version = "1.0.1" // adds the novel catalogue as a second source
+version = "1.0.2" // adds the novel catalogue as a second source; WebNovel casing
 
 dependencies {
     compileOnly(libs.kodex.spi)
