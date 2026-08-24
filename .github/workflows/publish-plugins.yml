@@ -24,6 +24,7 @@ jobs:
       full: ${{ steps.scope.outputs.full }}
       changed: ${{ steps.scope.outputs.changed }}
       plugins: ${{ steps.publish.outputs.plugins }}
+      changes: ${{ steps.summary.outputs.changes }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -72,12 +73,18 @@ jobs:
         if: steps.scope.outputs.full == '1'
         run: ./gradlew generatePluginsJson
 
+      # Two uses: the JARs an incremental build carries over, and the baseline the change summary
+      # below diffs against — which is why it runs for full rebuilds too. Absent on the very first
+      # publish, when the repo branch doesn't exist yet.
       - name: Fetch the current plugin repository
-        if: steps.scope.outputs.full == '0'
         run: |
-          git fetch origin repo
-          mkdir -p prev-repo
-          git archive origin/repo | tar -x -C prev-repo
+          if git ls-remote --exit-code origin repo >/dev/null 2>&1; then
+            git fetch origin repo
+            mkdir -p prev-repo
+            git archive origin/repo | tar -x -C prev-repo
+          else
+            echo "No repo branch yet — first publish, nothing to diff against."
+          fi
 
       - name: Build plugin repository (incremental)
         if: steps.scope.outputs.full == '0'
@@ -96,6 +103,62 @@ jobs:
           git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Which plugins the publish actually *changed*, from the JAR digests in plugins.json rather than
+      # from the rebuild list: a rebuilt module whose JAR came out byte-identical is not news, and a
+      # changed JAR that kept its version is worth shouting about — PF4J only reloads a plugin when its
+      # version moves, so that build ships nothing to installed servers.
+      # Runs after the push (a summary bug must never block a publish) and can't fail the job.
+      - name: Summarize published plugins
+        id: summary
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > plugin-changes.txt
+          import json, pathlib
+
+          def load(path):
+              p = pathlib.Path(path)
+              return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else []
+
+          # One release per entry — the build writes exactly the JAR it just produced.
+          def release(entry):
+              return (entry.get("releases") or [{}])[0]
+
+          def label(entry):
+              return f'{(entry.get("kind") or "other").lower()}/{entry.get("id")}'
+
+          # Missing on the first publish: everything then reads as new, which is the truth.
+          prev = {e.get("id"): e for e in load("prev-repo/plugins.json")}
+          new = load("build/plugins-repo/plugins.json")
+
+          lines = []
+          for e in new:
+              r = release(e)
+              old = prev.get(e.get("id"))
+              if old is None:
+                  lines.append(f'{label(e)} {r.get("version")} — new')
+                  continue
+              o = release(old)
+              if o.get("sha512sum") == r.get("sha512sum"):
+                  continue  # carried over byte-identical — not news
+              if o.get("version") != r.get("version"):
+                  lines.append(f'{label(e)} {o.get("version")} → {r.get("version")}')
+              else:
+                  lines.append(f'{label(e)} {r.get("version")} — rebuilt, version unchanged')
+
+          ids = {e.get("id") for e in new}
+          lines += [f'{label(o)} — removed' for i, o in prev.items() if i not in ids]
+          print("\n".join(lines))
+          PY
+          cat plugin-changes.txt
+          # Multi-line step output. The delimiter is ours, not plugin-derived, so it can't be spoofed
+          # by a manifest value that happens to contain it.
+          {
+            echo "changes<<PLUGIN_CHANGES_EOF"
+            cat plugin-changes.txt
+            echo "PLUGIN_CHANGES_EOF"
+          } >> "$GITHUB_OUTPUT"
 
 
   # Pings a Telegram chat once the publish finishes. Needs two repository secrets —
@@ -127,6 +190,7 @@ jobs:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
           FULL: ${{ needs.build.outputs.full }}
           CHANGED: ${{ needs.build.outputs.changed }}
+          CHANGES: ${{ needs.build.outputs.changes }}
           PLUGINS: ${{ needs.build.outputs.plugins }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}/tree/repo
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -155,17 +219,30 @@ jobs:
               printf '<b>Commit:</b> %s\n' "$(esc "${subject}")"
             fi
             printf '<b>By:</b> %s\n' "$(esc "${ACTOR}")"
-            # Which plugins were actually rebuilt is the thing the commit alone doesn't tell you.
             if [ "${FULL}" = "1" ]; then
               printf '<b>Scope:</b> full rebuild\n'
             elif [ -n "${CHANGED}" ]; then
-              printf '<b>Rebuilt:</b> <code>%s</code>\n' "$(esc "$(printf '%s' "${CHANGED}" | tr ',' ' ')")"
+              printf '<b>Scope:</b> incremental — %s\n' "$(esc "$(printf '%s' "${CHANGED}" | tr ',' ' ')")"
             else
               printf '<b>Scope:</b> incremental — no plugin sources changed\n'
             fi
-            if [ "${RESULT}" = "success" ] && [ -n "${PLUGINS}" ]; then
-              printf '<b>Repository:</b> <a href="%s">%s plugin(s) on the repo branch</a>\n' \
-                "$(esc "${REPO_URL}")" "$(esc "${PLUGINS}")"
+            # The plugins whose published JAR actually moved, named one per line with their versions.
+            if [ "${RESULT}" = "success" ]; then
+              total=$(printf '%s\n' "${CHANGES}" | grep -c . || true)
+              if [ "${total}" -gt 0 ]; then
+                printf '<b>Plugins changed (%s):</b>\n' "$(esc "${total}")"
+                # sed, not head: head closes the pipe early, which trips pipefail.
+                printf '%s\n' "${CHANGES}" | sed -n '1,20p' | while IFS= read -r line; do
+                  if [ -n "${line}" ]; then printf '• <code>%s</code>\n' "$(esc "${line}")"; fi
+                done
+                if [ "${total}" -gt 20 ]; then printf '… and %s more\n' "$((total - 20))"; fi
+              else
+                printf '<b>Plugins changed:</b> none — every JAR is byte-identical\n'
+              fi
+              if [ -n "${PLUGINS}" ]; then
+                printf '<b>Repository:</b> <a href="%s">%s plugin(s) on the repo branch</a>\n' \
+                  "$(esc "${REPO_URL}")" "$(esc "${PLUGINS}")"
+              fi
             fi
             printf '<a href="%s">View run</a>\n' "$(esc "${RUN_URL}")"
           } > telegram-message.html
