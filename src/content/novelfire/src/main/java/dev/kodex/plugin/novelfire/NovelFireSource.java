@@ -436,17 +436,24 @@ public class NovelFireSource implements ContentSource {
         return List.of();
     }
 
+    /**
+     * Fails loudly when the chapter body is missing or empty instead of returning blank text: the site drops
+     * {@code #content} on transient fetch hiccups, and a silent empty chapter gets cached and downloaded as a
+     * blank page. Matches upstream lnreader-plugins #2462.
+     */
     @Override
     public SourceChapterContent chapterContent(String chapterExternalId, ProviderSettings settings) {
-        Document doc = getHtml(BASE_URL + "/" + chapterExternalId);
+        String url = BASE_URL + "/" + chapterExternalId;
+        Document doc = getHtml(url);
         if (doc == null) {
-            return new SourceChapterContent(null, "");
+            throw new IllegalStateException("Novel Fire: chapter page could not be fetched (" + url + ") - retry");
         }
         Element content = doc.getElementById("content");
         if (content == null) {
-            LOG.log(System.Logger.Level.WARNING,
-                () -> "Novel Fire: no #content body at " + BASE_URL + "/" + chapterExternalId);
-            return new SourceChapterContent(null, "");
+            LOG.log(System.Logger.Level.WARNING, () -> "Novel Fire: no #content body at " + url);
+            throw new IllegalStateException(
+                "Novel Fire: chapter content container (#content) not found at " + url
+                    + " - likely a transient fetch issue, retry");
         }
         // The site salts the prose with custom <nf…> elements holding junk text; drop them.
         for (Element element : content.getAllElements()) {
@@ -456,9 +463,13 @@ public class NovelFireSource implements ContentSource {
             }
         }
         content.select("script, style, ins, .adsbygoogle").remove();
+        String html = content.html().replace("&nbsp;", " ");
+        if (html.isBlank()) {
+            throw new IllegalStateException("Novel Fire: chapter content was empty after parsing " + url);
+        }
         Element heading = doc.selectFirst(".chapter-title");
         String title = heading == null ? null : heading.text().trim();
-        return new SourceChapterContent(title, content.html().replace("&nbsp;", " "));
+        return new SourceChapterContent(title, html);
     }
 
     // ---- Helpers ---------------------------------------------------------------------------------

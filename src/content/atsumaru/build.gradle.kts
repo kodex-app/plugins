@@ -2,6 +2,8 @@ plugins {
     java
 }
 
+version = "1.1.0" // filters fetched from /api/explore/availableFilters; largeImage covers
+
 dependencies {
     compileOnly(libs.kodex.spi)
     compileOnly(libs.okhttp) // outbound HTTP via the core-provided OkHttpClient (host-provided)

@@ -54,9 +54,14 @@ public class AtsumaruSource implements ContentSource {
     /** Opt-in 18+ browsing, mirroring the extension's "Toggle adult mode" preference. */
     static final String PREF_SHOW_18 = "show_adult";
 
+    /** How long a fetched {@code /api/explore/availableFilters} response is reused. */
+    private static final long FILTER_TTL_MS = 6L * 60 * 60 * 1000;
+
     /** Outbound HTTP via the core's proxy/DoH-configured client; a plain client only as a fallback. */
     private static final OkHttpClient FALLBACK = new OkHttpClient();
     private volatile HttpClientProvider httpProvider;
+    private volatile Filters.Data filterData;
+    private volatile long filterDataExpiresAt;
 
     @Override
     public void setHttpClientProvider(HttpClientProvider provider) {
@@ -122,15 +127,36 @@ public class AtsumaruSource implements ContentSource {
 
     @Override
     public FilterList getFilterList() {
-        return Filters.defaultFilterList(false);
+        return Filters.filterList(filterData(), false);
+    }
+
+    /**
+     * The filter tables the site publishes, cached for {@link #FILTER_TTL_MS}. Falls back to the offline
+     * tables in {@link Filters} when the call fails, and keeps serving a stale copy rather than shrinking
+     * the UI's filter list on a transient error.
+     */
+    private Filters.Data filterData() {
+        Filters.Data cached = filterData;
+        if (cached != null && System.currentTimeMillis() < filterDataExpiresAt) {
+            return cached;
+        }
+        JsonNode root = getJson(BASE_URL + "/api/explore/availableFilters");
+        Filters.Data parsed = root == null ? null : Filters.parse(root);
+        if (parsed == null) {
+            return cached != null ? cached : Filters.fallback();
+        }
+        filterData = parsed;
+        filterDataExpiresAt = System.currentTimeMillis() + FILTER_TTL_MS;
+        return parsed;
     }
 
     @Override
     public SeriesPage search(String query, int page, FilterList filters, ProviderSettings settings) {
         String q = query == null ? "" : query.trim();
         boolean force18 = is18Enabled(settings);
+        Filters.Data data = filterData();
         FilterList effective = (filters == null || filters.filters().isEmpty())
-            ? Filters.defaultFilterList(force18)
+            ? Filters.filterList(data, force18)
             : filters;
 
         HttpUrl.Builder url = HttpUrl.get(BASE_URL + "/collections/manga/documents/search").newBuilder();
@@ -151,10 +177,12 @@ public class AtsumaruSource implements ContentSource {
         for (Filter<?> filter : effective.filters()) {
             if (filter instanceof Filter.Group group) {
                 switch (group.name()) {
-                    case Filters.GENRES -> collectTriState(group, includedGenres, excludedGenres);
-                    case Filters.TAGS -> collectTriState(group, includedTags, excludedTags);
-                    case Filters.TYPE -> collectChecked(group, types);
-                    case Filters.STATUS -> collectChecked(group, statuses);
+                    case Filters.GENRES ->
+                        collectTriState(data, Filters.GENRES, group, includedGenres, excludedGenres);
+                    case Filters.TAGS ->
+                        collectTriState(data, Filters.TAGS, group, includedTags, excludedTags);
+                    case Filters.TYPE -> collectChecked(data, Filters.TYPE, group, types);
+                    case Filters.STATUS -> collectChecked(data, Filters.STATUS, group, statuses);
                     default -> {
                     }
                 }
@@ -246,10 +274,14 @@ public class AtsumaruSource implements ContentSource {
         return new SeriesPage(mapItems(root.path("items")), true);
     }
 
-    private static void collectTriState(Filter.Group group, List<String> included, List<String> excluded) {
+    /** Walks a filter group (tags nest one subgroup per category) collecting the included/excluded ids. */
+    private static void collectTriState(Filters.Data data, String kind, Filter.Group group,
+        List<String> included, List<String> excluded) {
         for (Filter<?> option : group.state()) {
-            if (option instanceof Filter.TriState tri) {
-                String id = Filters.idOf(group.name(), tri.name());
+            if (option instanceof Filter.Group nested) {
+                collectTriState(data, kind, nested, included, excluded);
+            } else if (option instanceof Filter.TriState tri) {
+                String id = data.idOf(kind, tri.name());
                 if (id == null) {
                     continue;
                 }
@@ -262,10 +294,12 @@ public class AtsumaruSource implements ContentSource {
         }
     }
 
-    private static void collectChecked(Filter.Group group, List<String> out) {
+    private static void collectChecked(Filters.Data data, String kind, Filter.Group group, List<String> out) {
         for (Filter<?> option : group.state()) {
-            if (option instanceof Filter.CheckBox box && Boolean.TRUE.equals(box.state())) {
-                String id = Filters.idOf(group.name(), box.name());
+            if (option instanceof Filter.Group nested) {
+                collectChecked(data, kind, nested, out);
+            } else if (option instanceof Filter.CheckBox box && Boolean.TRUE.equals(box.state())) {
+                String id = data.idOf(kind, box.name());
                 if (id != null) {
                     out.add(id);
                 }
@@ -374,7 +408,7 @@ public class AtsumaruSource implements ContentSource {
         JsonNode poster = manga.has("poster") ? manga.path("poster") : manga.path("image");
         return new SearchResult(id(), mangaId, title != null ? title : mangaId,
             description.isEmpty() ? null : description.toString(),
-            coverUrl(poster),
+            coverUrl(manga, poster),
             authors.isEmpty() ? null : String.join(", ", authors),
             artists.isEmpty() ? null : String.join(", ", artists),
             genres, parseStatus(text(manga.get("status"))), Map.of());
@@ -499,8 +533,18 @@ public class AtsumaruSource implements ContentSource {
 
     // ---- Helpers ---------------------------------------------------------------------------------
 
-    /** Covers arrive as a bare string or as a {@code {image}} object, and may be site-relative. */
-    private static String coverUrl(JsonNode poster) {
+    /**
+     * Covers arrive as a bare string or as a {@code {largeImage, image}} object, and may be site-relative.
+     * {@code largeImage} wins where present: the plain {@code image} is a small, blurry thumbnail.
+     */
+    private static String coverUrl(JsonNode manga, JsonNode poster) {
+        String large = text(manga.get("largeImage"));
+        if (large == null && poster != null && poster.isObject()) {
+            large = text(poster.get("largeImage"));
+        }
+        if (large != null) {
+            return absoluteImage(stripStaticPrefix(large));
+        }
         if (poster == null || poster.isMissingNode() || poster.isNull()) {
             return null;
         }

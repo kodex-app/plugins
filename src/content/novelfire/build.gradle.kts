@@ -2,6 +2,8 @@ plugins {
     java
 }
 
+version = "1.0.1" // fail loudly on an empty chapter body instead of caching a blank chapter
+
 dependencies {
     compileOnly(libs.kodex.spi)
     compileOnly(libs.jsoup) // the site is scraped HTML (host-provided)
