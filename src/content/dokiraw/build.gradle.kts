@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-version = "1.0.2" // domain moved to dokiraw.beer
+version = "1.0.3" // domain moved to dokiraw.casa (upstream says .space, which 301s to .casa)
 
 dependencies {
     compileOnly(libs.kodex.spi)
