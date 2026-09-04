@@ -57,6 +57,13 @@ public class AtsumaruSource implements ContentSource {
     /** How long a fetched {@code /api/explore/availableFilters} response is reused. */
     private static final long FILTER_TTL_MS = 6L * 60 * 60 * 1000;
 
+    /** The site's series path segment, carried in every {@code seriesExternalId} — see {@link #mangaId}. */
+    private static final String MANGA_PATH_PREFIX = "manga/";
+
+    /** Attempts per JSON request, and the backoff between them — a throttled reply must not fail soft. */
+    private static final int MAX_ATTEMPTS = 3;
+    private static final long RETRY_BACKOFF_MS = 700;
+
     /** Outbound HTTP via the core's proxy/DoH-configured client; a plain client only as a fallback. */
     private static final OkHttpClient FALLBACK = new OkHttpClient();
     private volatile HttpClientProvider httpProvider;
@@ -328,12 +335,41 @@ public class AtsumaruSource implements ContentSource {
 
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
-        JsonNode page = getJson(BASE_URL + "/api/manga/page?id=" + enc(seriesExternalId));
-        if (page == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
+        String mangaId = mangaId(seriesExternalId);
+        JsonNode page = getJson(BASE_URL + "/api/manga/page?id=" + enc(mangaId));
+        if (page != null) {
+            return toResult(page.path("mangaPage"));
         }
-        return toResult(page.path("mangaPage"));
+        // The details endpoint is the only place a cover comes from once a series is followed, and the
+        // core persists whatever comes back — a fail-soft empty shell would leave the library entry
+        // coverless for good. Fall back to the search index, which carries the title + poster too.
+        SearchResult indexed = searchIndexEntry(mangaId);
+        if (indexed != null) {
+            return indexed;
+        }
+        return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
+            null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
+    }
+
+    /** One series straight out of the Typesense collection, by id — the details endpoint's stand-in. */
+    private SearchResult searchIndexEntry(String mangaId) {
+        HttpUrl url = HttpUrl.get(BASE_URL + "/collections/manga/documents/search").newBuilder()
+            .addQueryParameter("q", "*")
+            .addQueryParameter("filter_by", "id:=`" + mangaId + "`")
+            .addQueryParameter("page", "1")
+            .addQueryParameter("per_page", "1")
+            .build();
+        JsonNode root = getJson(url.toString());
+        if (root == null) {
+            return null;
+        }
+        for (JsonNode hit : root.path("hits")) {
+            JsonNode doc = hit.path("document");
+            if (doc.isObject()) {
+                return toResult(doc);
+            }
+        }
+        return null;
     }
 
     private List<SearchResult> mapItems(JsonNode items) {
@@ -406,7 +442,7 @@ public class AtsumaruSource implements ContentSource {
         }
 
         JsonNode poster = manga.has("poster") ? manga.path("poster") : manga.path("image");
-        return new SearchResult(id(), mangaId, title != null ? title : mangaId,
+        return new SearchResult(id(), seriesExternalId(mangaId), title != null ? title : mangaId,
             description.isEmpty() ? null : description.toString(),
             coverUrl(manga, poster),
             authors.isEmpty() ? null : String.join(", ", authors),
@@ -450,13 +486,14 @@ public class AtsumaruSource implements ContentSource {
 
     @Override
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
-        JsonNode all = getJson(BASE_URL + "/api/manga/allChapters?mangaId=" + enc(seriesExternalId));
+        String mangaId = mangaId(seriesExternalId);
+        JsonNode all = getJson(BASE_URL + "/api/manga/allChapters?mangaId=" + enc(mangaId));
         if (all == null) {
             return List.of();
         }
         // Chapters carry a scanlation-group id; the group names only live on the details page.
         Map<String, String> scanlators = new HashMap<>();
-        JsonNode page = getJson(BASE_URL + "/api/manga/page?id=" + enc(seriesExternalId));
+        JsonNode page = getJson(BASE_URL + "/api/manga/page?id=" + enc(mangaId));
         if (page != null) {
             for (JsonNode group : page.path("mangaPage").path("scanlators")) {
                 String groupId = text(group.get("id"));
@@ -499,7 +536,7 @@ public class AtsumaruSource implements ContentSource {
         if (slash < 0) {
             return List.of();
         }
-        String mangaId = chapterExternalId.substring(0, slash);
+        String mangaId = mangaId(chapterExternalId.substring(0, slash));
         String chapterId = chapterExternalId.substring(slash + 1);
 
         HttpUrl url = HttpUrl.get(BASE_URL + "/api/read/chapter").newBuilder()
@@ -577,6 +614,31 @@ public class AtsumaruSource implements ContentSource {
         return url.replaceFirst("^https?:?//", "https://");
     }
 
+    /**
+     * The {@code seriesExternalId} this source emits: the site's own {@code /manga/<id>} path rather than
+     * the bare id the JSON API keys on. The core links out to a series as {@code website() + "/" + id}, so
+     * a bare id would produce {@code https://atsu.moe/<id>} — a 404. {@link #mangaId} takes the path back
+     * apart, and still accepts the bare id so series followed before this change keep working.
+     */
+    private static String seriesExternalId(String mangaId) {
+        return mangaId == null || mangaId.isBlank() ? mangaId : MANGA_PATH_PREFIX + mangaId;
+    }
+
+    /** The API's manga id, from either {@code manga/<id>} or a bare {@code <id>}. */
+    private static String mangaId(String seriesExternalId) {
+        if (seriesExternalId == null) {
+            return null;
+        }
+        String out = seriesExternalId.startsWith("/") ? seriesExternalId.substring(1) : seriesExternalId;
+        return out.startsWith(MANGA_PATH_PREFIX) ? out.substring(MANGA_PATH_PREFIX.length()) : out;
+    }
+
+    /** Mihon stores Atsumaru's bare manga id; ours carries the {@code manga/} path segment. */
+    @Override
+    public String toSeriesExternalId(String mihonMangaUrl) {
+        return seriesExternalId(mangaId(mihonMangaUrl));
+    }
+
     private static String adultParam(ProviderSettings settings) {
         return is18Enabled(settings) ? "&adult=1" : "";
     }
@@ -585,6 +647,11 @@ public class AtsumaruSource implements ContentSource {
         return settings != null && settings.getBoolean(PREF_SHOW_18, false);
     }
 
+    /**
+     * A JSON GET that retries a throttled or transiently-failed reply before giving up. Returning null
+     * here is how a call fails soft, and the core stores what it gets back — so a single 429 during a bulk
+     * follow would otherwise be baked into the library as a title-less, coverless series.
+     */
     private JsonNode getJson(String url) {
         Request req = new Request.Builder()
             .url(url)
@@ -593,19 +660,54 @@ public class AtsumaruSource implements ContentSource {
             .header("Accept", "*/*")
             .header("Content-Type", "application/json")
             .get().build();
-        try (Response res = http().newCall(req).execute()) {
-            ResponseBody body = res.body();
-            String payload = body != null ? body.string() : null;
-            if (!res.isSuccessful() || payload == null) {
+        for (int i = 1; ; i++) {
+            final int attempt = i;
+            long backoffMs;
+            try (Response res = http().newCall(req).execute()) {
+                ResponseBody body = res.body();
+                String payload = body != null ? body.string() : null;
+                if (res.isSuccessful() && payload != null) {
+                    return MAPPER.readTree(payload);
+                }
                 int code = res.code();
-                LOG.log(System.Logger.Level.WARNING, () -> "Atsumaru HTTP " + code + " for " + url);
+                LOG.log(System.Logger.Level.WARNING,
+                    () -> "Atsumaru HTTP " + code + " for " + url + " (attempt " + attempt + ")");
+                if (attempt >= MAX_ATTEMPTS || !isRetryable(code)) {
+                    return null;
+                }
+                backoffMs = retryAfterMs(res.header("Retry-After"), attempt);
+            } catch (Exception e) {
+                LOG.log(System.Logger.Level.WARNING,
+                    () -> "Atsumaru request failed for " + url + " (attempt " + attempt + ")", e);
+                if (attempt >= MAX_ATTEMPTS) {
+                    return null; // fail soft, per the SPI contract
+                }
+                backoffMs = RETRY_BACKOFF_MS * attempt;
+            }
+            try {
+                Thread.sleep(backoffMs);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
                 return null;
             }
-            return MAPPER.readTree(payload);
-        } catch (Exception e) {
-            LOG.log(System.Logger.Level.WARNING, () -> "Atsumaru request failed for " + url, e);
-            return null; // fail soft, per the SPI contract
         }
+    }
+
+    /** Throttling and upstream hiccups are worth another try; a 404 or a rejected query is not. */
+    private static boolean isRetryable(int code) {
+        return code == 429 || code == 408 || code >= 500;
+    }
+
+    /** The server's {@code Retry-After} in millis (capped), or a linear backoff when it doesn't say. */
+    private static long retryAfterMs(String retryAfter, int attempt) {
+        if (retryAfter != null) {
+            try {
+                return Math.min(Long.parseLong(retryAfter.trim()) * 1000, 5000);
+            } catch (NumberFormatException ignored) {
+                // date-form Retry-After — fall through to the default backoff
+            }
+        }
+        return RETRY_BACKOFF_MS * attempt;
     }
 
     /** A scalar JSON node's text, or null when the field is absent/null/non-scalar. */

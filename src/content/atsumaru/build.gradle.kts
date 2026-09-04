@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-version = "1.1.0" // filters fetched from /api/explore/availableFilters; largeImage covers
+version = "1.2.0" // seriesExternalId carries the /manga path; details fall back to the search index + retry
 
 dependencies {
     compileOnly(libs.kodex.spi)
