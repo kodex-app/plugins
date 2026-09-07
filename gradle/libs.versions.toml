@@ -1,5 +1,5 @@
 [versions]
-kodexSpi = "0.1.0"
+kodexSpi = "0.2.0"
 pf4j = "3.15.0"
 jsoup = "1.22.2"
 okhttp = "5.4.0"

@@ -13,6 +13,7 @@ import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.Filter;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
@@ -135,9 +136,6 @@ public abstract class KaganeSource implements ContentSource {
         }
 
         JsonNode dto = postJson(url.build().toString(), body.toString());
-        if (dto == null) {
-            return SeriesPage.empty();
-        }
         List<SearchResult> items = new ArrayList<>();
         for (JsonNode book : dto.path("content")) {
             String seriesId = text(book, "series_id");
@@ -162,10 +160,6 @@ public abstract class KaganeSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         JsonNode dto = getJson(API_URL + "/api/v2/series/" + seriesExternalId, true);
-        if (dto == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
         String title = trim(text(dto, "title"));
 
         String thumbnail = null;
@@ -249,9 +243,6 @@ public abstract class KaganeSource implements ContentSource {
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         JsonNode dto = getJson(API_URL + "/api/v2/series/" + seriesExternalId, true);
         List<SourceChapter> chapters = new ArrayList<>();
-        if (dto == null) {
-            return chapters;
-        }
         String format = text(dto, "format");
         boolean useSourceNumber = format != null && Set.of(
             "Dark Horse Comics", "Flame Comics", "MangaDex", "Square Enix Manga").contains(format);
@@ -469,26 +460,32 @@ public abstract class KaganeSource implements ContentSource {
         return parse(execute(req));
     }
 
+    /**
+     * Runs one request and returns its body. A failed request throws instead of returning null: a
+     * block, a moved domain, or a timeout used to come back as an empty feed, which the apps can only
+     * render as "this source has nothing".
+     */
     private String execute(Request req) {
+        String url = req.url().toString();
         try (Response res = http().newCall(req).execute()) {
             ResponseBody body = res.body();
-            if (!res.isSuccessful() || body == null) {
-                return null;
+            String payload = body == null ? null : body.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return body.string();
+            return payload;
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            return null;
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 
-    private static JsonNode parse(String body) {
-        if (body == null) {
-            return null;
-        }
+    private JsonNode parse(String body) {
         try {
             return MAPPER.readTree(body);
         } catch (Exception e) {
-            return null;
+            throw SourceUnavailableException.unreadable(displayName(), BASE_URL, "response was not JSON");
         }
     }
 

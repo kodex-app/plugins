@@ -11,6 +11,7 @@ import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.Filter;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -125,9 +126,6 @@ public class AtsumaruSource implements ContentSource {
             + "?offset=" + offset + "&limit=" + BROWSE_LIMIT
             + "&types=Manga,Manwha,Manhua,OEL&mediums=Comic" + extraParams + adultParam(settings);
         JsonNode root = getJson(url);
-        if (root == null) {
-            return SeriesPage.empty();
-        }
         // The browse feeds report no total, so upstream always advertises another page.
         return new SeriesPage(mapItems(root.path("items")), true);
     }
@@ -147,7 +145,7 @@ public class AtsumaruSource implements ContentSource {
         if (cached != null && System.currentTimeMillis() < filterDataExpiresAt) {
             return cached;
         }
-        JsonNode root = getJson(BASE_URL + "/api/explore/availableFilters");
+        JsonNode root = getJsonOrNull(BASE_URL + "/api/explore/availableFilters");
         Filters.Data parsed = root == null ? null : Filters.parse(root);
         if (parsed == null) {
             return cached != null ? cached : Filters.fallback();
@@ -264,9 +262,6 @@ public class AtsumaruSource implements ContentSource {
         url.addQueryParameter("per_page", String.valueOf(SEARCH_LIMIT));
 
         JsonNode root = getJson(url.build().toString());
-        if (root == null) {
-            return SeriesPage.empty();
-        }
         // Typesense answers with "hits"; anything else is the plain browse shape.
         if (root.has("hits")) {
             List<SearchResult> items = new ArrayList<>();
@@ -336,7 +331,7 @@ public class AtsumaruSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         String mangaId = mangaId(seriesExternalId);
-        JsonNode page = getJson(BASE_URL + "/api/manga/page?id=" + enc(mangaId));
+        JsonNode page = getJsonOrNull(BASE_URL + "/api/manga/page?id=" + enc(mangaId));
         if (page != null) {
             return toResult(page.path("mangaPage"));
         }
@@ -347,8 +342,8 @@ public class AtsumaruSource implements ContentSource {
         if (indexed != null) {
             return indexed;
         }
-        return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-            null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
+        throw new SourceUnavailableException(
+            displayName() + ": neither the details endpoint nor the search index answered for " + mangaId);
     }
 
     /** One series straight out of the Typesense collection, by id — the details endpoint's stand-in. */
@@ -359,7 +354,7 @@ public class AtsumaruSource implements ContentSource {
             .addQueryParameter("page", "1")
             .addQueryParameter("per_page", "1")
             .build();
-        JsonNode root = getJson(url.toString());
+        JsonNode root = getJsonOrNull(url.toString());
         if (root == null) {
             return null;
         }
@@ -488,12 +483,9 @@ public class AtsumaruSource implements ContentSource {
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         String mangaId = mangaId(seriesExternalId);
         JsonNode all = getJson(BASE_URL + "/api/manga/allChapters?mangaId=" + enc(mangaId));
-        if (all == null) {
-            return List.of();
-        }
         // Chapters carry a scanlation-group id; the group names only live on the details page.
         Map<String, String> scanlators = new HashMap<>();
-        JsonNode page = getJson(BASE_URL + "/api/manga/page?id=" + enc(mangaId));
+        JsonNode page = getJsonOrNull(BASE_URL + "/api/manga/page?id=" + enc(mangaId));
         if (page != null) {
             for (JsonNode group : page.path("mangaPage").path("scanlators")) {
                 String groupId = text(group.get("id"));
@@ -544,9 +536,6 @@ public class AtsumaruSource implements ContentSource {
             .addQueryParameter("chapterId", chapterId)
             .build();
         JsonNode root = getJson(url.toString());
-        if (root == null) {
-            return List.of();
-        }
         // Mirrors the extension's imageRequest(): the CDN wants an image Accept header.
         Map<String, String> headers = Map.of(
             "User-Agent", USER_AGENT,
@@ -652,6 +641,11 @@ public class AtsumaruSource implements ContentSource {
      * here is how a call fails soft, and the core stores what it gets back — so a single 429 during a bulk
      * follow would otherwise be baked into the library as a title-less, coverless series.
      */
+    /**
+     * Calls the API, retrying the retryable statuses. Once the attempts are spent the failure is
+     * thrown rather than returned as null: an outage used to come back as an empty feed, which the
+     * apps can only render as "this source has nothing".
+     */
     private JsonNode getJson(String url) {
         Request req = new Request.Builder()
             .url(url)
@@ -673,14 +667,14 @@ public class AtsumaruSource implements ContentSource {
                 LOG.log(System.Logger.Level.WARNING,
                     () -> "Atsumaru HTTP " + code + " for " + url + " (attempt " + attempt + ")");
                 if (attempt >= MAX_ATTEMPTS || !isRetryable(code)) {
-                    return null;
+                    throw SourceUnavailableException.http(displayName(), url, code, payload);
                 }
                 backoffMs = retryAfterMs(res.header("Retry-After"), attempt);
             } catch (Exception e) {
                 LOG.log(System.Logger.Level.WARNING,
                     () -> "Atsumaru request failed for " + url + " (attempt " + attempt + ")", e);
                 if (attempt >= MAX_ATTEMPTS) {
-                    return null; // fail soft, per the SPI contract
+                    throw SourceUnavailableException.transport(displayName(), url, e);
                 }
                 backoffMs = RETRY_BACKOFF_MS * attempt;
             }
@@ -688,12 +682,26 @@ public class AtsumaruSource implements ContentSource {
                 Thread.sleep(backoffMs);
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
-                return null;
+                throw new SourceUnavailableException(
+                    displayName() + ": interrupted while retrying " + url, interrupted);
             }
         }
     }
 
     /** Throttling and upstream hiccups are worth another try; a 404 or a rejected query is not. */
+    /**
+     * {@link #getJson} for the two calls that have a real fallback — the filter list (static defaults)
+     * and the details endpoint (the search index stands in). Only those may swallow a failure.
+     */
+    private JsonNode getJsonOrNull(String url) {
+        try {
+            return getJson(url);
+        } catch (SourceUnavailableException e) {
+            LOG.log(System.Logger.Level.WARNING, e::getMessage);
+            return null;
+        }
+    }
+
     private static boolean isRetryable(int code) {
         return code == 429 || code == 408 || code >= 500;
     }

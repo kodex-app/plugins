@@ -8,6 +8,7 @@ import dev.kodex.spi.content.SeriesStatus;
 import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
@@ -90,9 +91,6 @@ public class MangaKuroSource implements ContentSource {
     }
 
     private SeriesPage parseList(Document doc) {
-        if (doc == null) {
-            return SeriesPage.empty();
-        }
         List<SearchResult> items = new ArrayList<>();
         for (Element element : doc.select(".story_item")) {
             Element a = element.selectFirst("a");
@@ -116,10 +114,6 @@ public class MangaKuroSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + seriesExternalId);
-        if (doc == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
         Element authorEl = doc.selectFirst("div:has(.lnr-user) + .info_value");
         Element statusEl = doc.selectFirst("div:has(.lnr-leaf) + .info_value");
         Element descEl = doc.selectFirst(".detail_reviewContent");
@@ -144,9 +138,6 @@ public class MangaKuroSource implements ContentSource {
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + seriesExternalId);
         List<SourceChapter> chapters = new ArrayList<>();
-        if (doc == null) {
-            return chapters;
-        }
         for (Element element : doc.select(".chapter_box .item")) {
             Element a = element.selectFirst("a");
             if (a == null) {
@@ -166,17 +157,11 @@ public class MangaKuroSource implements ContentSource {
     public List<SourcePage> pageList(String chapterExternalId, ProviderSettings settings) {
         List<SourcePage> pages = new ArrayList<>();
         String html = getString(BASE_URL + chapterExternalId);
-        if (html == null) {
-            return pages;
-        }
         Matcher idMatcher = CHAPTER_ID.matcher(html);
         if (!idMatcher.find()) {
             return pages;
         }
         String apiBody = getString(BASE_URL + "/ajax/image/list/chap/" + idMatcher.group(1));
-        if (apiBody == null) {
-            return pages;
-        }
         Map<String, String> headers = Map.of("Referer", BASE_URL + "/", "User-Agent", USER_AGENT);
         Matcher m = IMAGE.matcher(apiBody);
         int index = 0;
@@ -194,10 +179,14 @@ public class MangaKuroSource implements ContentSource {
     // ---- Helpers ---------------------------------------------------------------------------------
 
     private Document getHtml(String url) {
-        String body = getString(url);
-        return body == null ? null : Jsoup.parse(body, url);
+        return Jsoup.parse(getString(url), url);
     }
 
+    /**
+     * Runs one request and returns its body. A failed request throws instead of returning null: a
+     * block, a moved domain, or a timeout used to come back as an empty feed, which the apps can only
+     * render as "this source has nothing".
+     */
     private String getString(String url) {
         Request req = new Request.Builder()
             .url(url)
@@ -206,12 +195,15 @@ public class MangaKuroSource implements ContentSource {
             .get().build();
         try (Response res = http().newCall(req).execute()) {
             ResponseBody body = res.body();
-            if (!res.isSuccessful() || body == null) {
-                return null;
+            String payload = body == null ? null : body.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return body.string();
+            return payload;
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            return null;
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

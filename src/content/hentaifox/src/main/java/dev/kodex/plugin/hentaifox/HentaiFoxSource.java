@@ -10,6 +10,7 @@ import dev.kodex.spi.content.SeriesStatus;
 import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
@@ -118,9 +119,6 @@ public abstract class HentaiFoxSource implements ContentSource {
 
     private SeriesPage mangaList(String url) {
         Document doc = getHtml(url);
-        if (doc == null) {
-            return SeriesPage.empty();
-        }
         List<SearchResult> items = new ArrayList<>();
         for (Element el : doc.select("div.thumb")) {
             Element caption = el.selectFirst(".caption");
@@ -142,10 +140,6 @@ public abstract class HentaiFoxSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + seriesExternalId);
-        if (doc == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
         Element top = doc.selectFirst(".gallery_top");
         if (top == null) {
             return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
@@ -204,9 +198,6 @@ public abstract class HentaiFoxSource implements ContentSource {
     public List<SourcePage> pageList(String chapterExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + chapterExternalId);
         List<SourcePage> pages = new ArrayList<>();
-        if (doc == null) {
-            return pages;
-        }
         Map<String, String> headers = Map.of("Referer", BASE_URL + "/", "User-Agent", USER_AGENT);
         String json = parseJson(doc);
         if (json != null) {
@@ -341,6 +332,11 @@ public abstract class HentaiFoxSource implements ContentSource {
         return s.isEmpty() ? s : Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
+    /**
+     * Fetches a page. A failed request throws instead of returning null: a Cloudflare 403, a moved
+     * domain, or a timeout used to come back as an empty feed, which the apps can only render as
+     * "this source has nothing".
+     */
     private Document getHtml(String url) {
         Request req = new Request.Builder()
             .url(url)
@@ -349,12 +345,15 @@ public abstract class HentaiFoxSource implements ContentSource {
             .get().build();
         try (Response res = http().newCall(req).execute()) {
             ResponseBody body = res.body();
-            if (!res.isSuccessful() || body == null) {
-                return null;
+            String payload = body == null ? null : body.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return Jsoup.parse(body.string(), url);
+            return Jsoup.parse(payload, url);
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

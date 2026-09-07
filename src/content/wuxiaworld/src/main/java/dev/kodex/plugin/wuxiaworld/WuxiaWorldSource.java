@@ -12,6 +12,7 @@ import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourceChapterContent;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import dev.kodex.spi.common.http.ProviderRateLimitException;
 import okhttp3.MediaType;
@@ -107,9 +108,6 @@ public class WuxiaWorldSource implements ContentSource {
 
     private List<SearchResult> parseNovels(JsonNode root) {
         List<SearchResult> out = new ArrayList<>();
-        if (root == null) {
-            return out;
-        }
         JsonNode items = root.get("items");
         if (items == null || !items.isArray()) {
             return out;
@@ -132,8 +130,8 @@ public class WuxiaWorldSource implements ContentSource {
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         Map<Integer, List<Object>> item = getNovel(seriesExternalId);
         if (item == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
+            throw SourceUnavailableException.unreadable(displayName(), BASE_URL,
+                "no novel in the GetNovel response for " + seriesExternalId);
         }
         String name = orElse(Proto.string(item, 2), seriesExternalId);
         String cover = Proto.wrappedString(item, 10);
@@ -166,7 +164,8 @@ public class WuxiaWorldSource implements ContentSource {
         List<SourceChapter> chapters = new ArrayList<>();
         Map<Integer, List<Object>> novel = getNovel(seriesExternalId);
         if (novel == null) {
-            return chapters;
+            throw SourceUnavailableException.unreadable(displayName(), BASE_URL,
+                "no novel in the GetNovel response for " + seriesExternalId);
         }
         long novelId = Proto.longVal(novel, 1, 0);
         if (novelId == 0) {
@@ -250,7 +249,8 @@ public class WuxiaWorldSource implements ContentSource {
         Map<Integer, List<Object>> resp = grpc("Chapters/GetChapter", req);
         Map<Integer, List<Object>> item = Proto.message(resp, 1);
         if (item == null) {
-            return new SourceChapterContent(null, "");
+            throw SourceUnavailableException.unreadable(displayName(), BASE_URL,
+                "no chapter in the GetChapter response for " + chapterSlug);
         }
         String content = Proto.wrappedString(item, 5); // ChapterItem.content: StringValue
         String name = Proto.string(item, 2);
@@ -278,17 +278,18 @@ public class WuxiaWorldSource implements ContentSource {
             .header("Origin", BASE_URL)
             .header("Referer", BASE_URL + "/")
             .build();
+        String url = API_URL + method;
         try (Response res = http().newCall(req).execute()) {
             throwIfRateLimited(res);
             ResponseBody body = res.body();
             if (!res.isSuccessful() || body == null) {
-                return Map.of();
+                throw SourceUnavailableException.http(displayName(), url, res.code(), null);
             }
             return Proto.decode(Proto.unframe(body.bytes()));
-        } catch (ProviderRateLimitException e) {
-            throw e; // must reach the core's retry/backoff handling — don't swallow with the IO failures below
+        } catch (RuntimeException e) {
+            throw e; // rate limit must reach the core's retry/backoff handling; unavailable is already right
         } catch (Exception e) {
-            return Map.of(); // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 
@@ -302,14 +303,15 @@ public class WuxiaWorldSource implements ContentSource {
         try (Response res = http().newCall(req).execute()) {
             throwIfRateLimited(res);
             ResponseBody body = res.body();
-            if (!res.isSuccessful() || body == null) {
-                return null;
+            String payload = body == null ? null : body.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return mapper.readTree(body.string());
-        } catch (ProviderRateLimitException e) {
-            throw e; // must reach the core's retry/backoff handling — don't swallow with the IO failures below
+            return mapper.readTree(payload);
+        } catch (RuntimeException e) {
+            throw e; // rate limit must reach the core's retry/backoff handling; unavailable is already right
         } catch (Exception e) {
-            return null;
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

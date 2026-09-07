@@ -10,6 +10,7 @@ import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.Filter;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -135,9 +136,6 @@ public class WebNovelComicSource implements ContentSource {
             "type", "manga",
             "pageIndex", String.valueOf(Math.max(1, page)),
             "keywords", q));
-        if (data == null) {
-            return SeriesPage.empty();
-        }
         return toSeriesPage(data.path("comicInfo"));
     }
 
@@ -168,7 +166,7 @@ public class WebNovelComicSource implements ContentSource {
             "categoryId", genre,
             "bookStatus", status,
             "orderBy", sort));
-        return data == null ? SeriesPage.empty() : toSeriesPage(data);
+        return toSeriesPage(data);
     }
 
     /**
@@ -334,35 +332,30 @@ public class WebNovelComicSource implements ContentSource {
      * code usually means the CSRF token went stale, so the token is dropped and the call retried once.
      */
     private JsonNode api(String path, Map<String, String> params) {
+        String lastError = "no response";
         for (int attempt = 0; attempt < 2; attempt++) {
             String token = csrfToken();
-            if (token == null) {
-                return null;
-            }
             HttpUrl.Builder url = HttpUrl.get(API_URL + path).newBuilder();
             params.forEach(url::addQueryParameter);
             url.addQueryParameter(CSRF_COOKIE, token);
 
             String payload = get(url.build().toString(), "application/json", token);
-            if (payload == null) {
-                return null;
-            }
+            JsonNode root;
             try {
-                JsonNode root = MAPPER.readTree(payload);
-                int code = root.path("code").asInt(-1);
-                if (code == 0) {
-                    return root.path("data");
-                }
-                String message = text(root.get("msg"));
-                LOG.log(System.Logger.Level.WARNING,
-                    () -> "WebNovel API error " + code + " for " + path + " — " + message);
-                csrfToken = null; // most likely an expired token; fetch a fresh one and retry
+                root = MAPPER.readTree(payload);
             } catch (Exception e) {
-                LOG.log(System.Logger.Level.WARNING, () -> "WebNovel: unreadable response for " + path, e);
-                return null;
+                throw SourceUnavailableException.unreadable(displayName(), API_URL + path, "response was not JSON");
             }
+            int code = root.path("code").asInt(-1);
+            if (code == 0) {
+                return root.path("data");
+            }
+            lastError = "API error " + code + (text(root.get("msg")) == null ? "" : " — " + text(root.get("msg")));
+            csrfToken = null; // most likely an expired token; fetch a fresh one and retry
         }
-        return null;
+        // Two attempts with a fresh CSRF token both rejected — report it rather than showing an empty
+        // shelf, which would read as "WebNovel has no comics".
+        throw SourceUnavailableException.unreadable(displayName(), API_URL + path, lastError);
     }
 
     /**
@@ -388,11 +381,12 @@ public class WebNovelComicSource implements ContentSource {
                     return token;
                 }
             }
-            LOG.log(System.Logger.Level.WARNING, () -> "WebNovel: no " + CSRF_COOKIE + " cookie on the home page");
-            return null;
+            throw SourceUnavailableException.unreadable(displayName(), BASE_URL + "/",
+                "no " + CSRF_COOKIE + " cookie on the home page");
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            LOG.log(System.Logger.Level.WARNING, () -> "WebNovel: could not obtain a CSRF token", e);
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), BASE_URL + "/", e);
         }
     }
 
@@ -410,14 +404,13 @@ public class WebNovelComicSource implements ContentSource {
             ResponseBody body = res.body();
             String payload = body != null ? body.string() : null;
             if (!res.isSuccessful() || payload == null) {
-                int code = res.code();
-                LOG.log(System.Logger.Level.WARNING, () -> "WebNovel HTTP " + code + " for " + url);
-                return null;
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
             return payload;
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            LOG.log(System.Logger.Level.WARNING, () -> "WebNovel request failed for " + url, e);
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

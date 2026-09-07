@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-version = "1.0.3"
+version = "1.0.4" // report fetch failures instead of an empty feed
 
 dependencies {
     compileOnly(libs.kodex.spi)

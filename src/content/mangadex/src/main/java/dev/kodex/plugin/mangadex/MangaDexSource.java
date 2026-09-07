@@ -10,6 +10,7 @@ import dev.kodex.spi.content.SeriesStatus;
 import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -121,9 +122,6 @@ public class MangaDexSource implements ContentSource {
 
     private SeriesPage mangaList(String url) {
         JsonNode root = getJson(url);
-        if (root == null) {
-            return SeriesPage.empty();
-        }
         List<SearchResult> items = new ArrayList<>();
         for (JsonNode d : root.path("data")) {
             items.add(toResult(d));
@@ -170,10 +168,6 @@ public class MangaDexSource implements ContentSource {
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         JsonNode root = getJson(API + "/manga/" + seriesExternalId
             + "?includes[]=cover_art&includes[]=author&includes[]=artist");
-        if (root == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
         JsonNode data = root.path("data");
         JsonNode attrs = data.path("attributes");
         String title = firstString(attrs.path("title"));
@@ -217,9 +211,6 @@ public class MangaDexSource implements ContentSource {
                 + "&order[volume]=desc&order[chapter]=desc&limit=500&offset=" + offset
                 + "&includeExternalUrl=0&includes[]=scanlation_group" + CONTENT_RATING;
             JsonNode root = getJson(url);
-            if (root == null) {
-                break;
-            }
             JsonNode data = root.path("data");
             for (JsonNode item : data) {
                 JsonNode attrs = item.path("attributes");
@@ -270,9 +261,6 @@ public class MangaDexSource implements ContentSource {
     public List<SourcePage> pageList(String chapterExternalId, ProviderSettings settings) {
         JsonNode root = getJson(API + "/at-home/server/" + chapterExternalId);
         List<SourcePage> pages = new ArrayList<>();
-        if (root == null) {
-            return pages;
-        }
         String baseUrl = text(root.get("baseUrl"));
         JsonNode chapter = root.path("chapter");
         String hash = text(chapter.get("hash"));
@@ -300,6 +288,11 @@ public class MangaDexSource implements ContentSource {
 
     // ---- Helpers ---------------------------------------------------------------------------------
 
+    /**
+     * Calls the API. A failed request throws instead of returning null: an outage or a rejected
+     * request used to come back as an empty feed, which the apps can only render as "this source has
+     * nothing". The message carries the status and the API's own error body, which names the reason.
+     */
     private JsonNode getJson(String url) {
         Request req = new Request.Builder()
             .url(encode(url))
@@ -311,17 +304,13 @@ public class MangaDexSource implements ContentSource {
             ResponseBody body = res.body();
             String payload = body != null ? body.string() : null;
             if (!res.isSuccessful() || payload == null) {
-                int code = res.code();
-                String snippet = payload == null ? "(no body)"
-                    : payload.substring(0, Math.min(500, payload.length()));
-                LOG.log(System.Logger.Level.WARNING,
-                    () -> "MangaDex HTTP " + code + " for " + url + " — " + snippet);
-                return null;
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
             return MAPPER.readTree(payload);
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            LOG.log(System.Logger.Level.WARNING, () -> "MangaDex request failed for " + url, e);
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

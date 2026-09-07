@@ -10,6 +10,7 @@ import dev.kodex.spi.content.SeriesStatus;
 import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -143,9 +144,6 @@ public abstract class NHentaiSource implements ContentSource {
     /** Reads a {@code PaginatedResponse[GalleryListItem]} — the shape both /search and /galleries return. */
     private SeriesPage galleryList(String url) {
         JsonNode root = getJson(url);
-        if (root == null) {
-            return SeriesPage.empty();
-        }
         List<SearchResult> items = new ArrayList<>();
         for (JsonNode gallery : root.path("result")) {
             items.add(fromListItem(gallery));
@@ -171,7 +169,7 @@ public abstract class NHentaiSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         JsonNode gallery = getJson(API_URL + "/galleries/" + galleryId(seriesExternalId));
-        if (gallery == null || gallery.path("id").isMissingNode()) {
+        if (gallery.path("id").isMissingNode()) {
             return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
                 null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
         }
@@ -202,7 +200,7 @@ public abstract class NHentaiSource implements ContentSource {
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         String galleryId = galleryId(seriesExternalId);
         JsonNode gallery = getJson(API_URL + "/galleries/" + galleryId);
-        if (gallery == null || gallery.path("id").isMissingNode()) {
+        if (gallery.path("id").isMissingNode()) {
             return List.of();
         }
         // An nhentai gallery is a single readable unit — the gallery itself is the one "chapter".
@@ -215,9 +213,6 @@ public abstract class NHentaiSource implements ContentSource {
     @Override
     public List<SourcePage> pageList(String chapterExternalId, ProviderSettings settings) {
         JsonNode gallery = getJson(API_URL + "/galleries/" + galleryId(chapterExternalId));
-        if (gallery == null) {
-            return List.of();
-        }
         // Pages are served off any image mirror; pin one per gallery so a reader keeps a single connection.
         String server = pick(imageServers(), gallery.path("media_id").asInt(0));
         Map<String, String> headers = imageHeaders();
@@ -262,7 +257,7 @@ public abstract class NHentaiSource implements ContentSource {
         if (imageServers != null && thumbServers != null) {
             return;
         }
-        JsonNode cdn = getJson(API_URL + "/cdn");
+        JsonNode cdn = getJsonOrNull(API_URL + "/cdn");
         imageServers = hosts(cdn == null ? null : cdn.path("image_servers"), FALLBACK_IMAGE_SERVERS);
         thumbServers = hosts(cdn == null ? null : cdn.path("thumb_servers"), FALLBACK_THUMB_SERVERS);
     }
@@ -364,6 +359,10 @@ public abstract class NHentaiSource implements ContentSource {
         return epochSeconds <= 0 ? null : Instant.ofEpochSecond(epochSeconds).atZone(ZoneOffset.UTC).toLocalDate();
     }
 
+    /**
+     * Calls the API. A failed request throws instead of returning null: a block or an outage used to
+     * come back as an empty feed, which the apps can only render as "this source has nothing".
+     */
     private JsonNode getJson(String url) {
         Request req = new Request.Builder()
             .url(url)
@@ -374,14 +373,27 @@ public abstract class NHentaiSource implements ContentSource {
         try (Response res = http().newCall(req).execute()) {
             throwIfRateLimited(res);
             ResponseBody body = res.body();
-            if (!res.isSuccessful() || body == null) {
-                return null;
+            String payload = body == null ? null : body.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return MAPPER.readTree(body.string());
-        } catch (ProviderRateLimitException e) {
-            throw e;
+            return MAPPER.readTree(payload);
+        } catch (RuntimeException e) {
+            throw e; // rate limit must reach the core's retry/backoff handling; unavailable is already right
         } catch (Exception e) {
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
+        }
+    }
+
+    /**
+     * {@link #getJson} for a call that has a real fallback — the CDN host list, which has built-in
+     * defaults. Only those may swallow a failure; everything else must surface it.
+     */
+    private JsonNode getJsonOrNull(String url) {
+        try {
+            return getJson(url);
+        } catch (SourceUnavailableException e) {
+            return null;
         }
     }
 

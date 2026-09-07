@@ -8,6 +8,7 @@ import dev.kodex.spi.content.SeriesStatus;
 import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
@@ -102,9 +103,6 @@ public class WeebCentralSource implements ContentSource {
         url.addQueryParameter("offset", String.valueOf((Math.max(1, page) - 1) * FETCH_LIMIT));
         url.addQueryParameter("display_mode", "Full Display");
         Document doc = getHtml(url.build().toString());
-        if (doc == null) {
-            return SeriesPage.empty();
-        }
         List<SearchResult> items = new ArrayList<>();
         for (Element a : doc.select("article > section > a")) {
             Element titleEl = a.selectFirst("div:not([class]):last-child");
@@ -123,10 +121,6 @@ public class WeebCentralSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + seriesExternalId);
-        if (doc == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
         var sections = doc.select("section[x-data] > section");
         String cover = null;
         String author = "";
@@ -175,9 +169,6 @@ public class WeebCentralSource implements ContentSource {
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + chapterListPath(seriesExternalId));
         List<SourceChapter> chapters = new ArrayList<>();
-        if (doc == null) {
-            return chapters;
-        }
         // The site lists chapters newest-first.
         Elements entries = doc.select("div[x-data] > a");
         // Series that number by season ("S2 - 14") can't be ordered from the name alone — the same
@@ -226,9 +217,6 @@ public class WeebCentralSource implements ContentSource {
         String url = BASE_URL + chapterExternalId + "/images?is_prev=False&reading_style=long_strip";
         Document doc = getHtml(url);
         List<SourcePage> pages = new ArrayList<>();
-        if (doc == null) {
-            return pages;
-        }
         var imgs = doc.select("section[x-data~=scroll] > img");
         Map<String, String> headers = Map.of(
             "Referer", BASE_URL + "/",
@@ -245,6 +233,11 @@ public class WeebCentralSource implements ContentSource {
 
     // ---- Helpers ---------------------------------------------------------------------------------
 
+    /**
+     * Fetches a page. A failed request throws instead of returning null: a Cloudflare 403, a moved
+     * domain, or a timeout used to come back as an empty feed, which the apps can only render as
+     * "this source has nothing".
+     */
     private Document getHtml(String url) {
         Request req = new Request.Builder()
             .url(url)
@@ -253,12 +246,15 @@ public class WeebCentralSource implements ContentSource {
             .get().build();
         try (Response res = http().newCall(req).execute()) {
             ResponseBody body = res.body();
-            if (!res.isSuccessful() || body == null) {
-                return null;
+            String payload = body == null ? null : body.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return Jsoup.parse(body.string(), url);
+            return Jsoup.parse(payload, url);
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

@@ -13,6 +13,7 @@ import dev.kodex.spi.content.SourceChapterContent;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.Filter;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -198,8 +199,7 @@ public class WebNovelNovelSource implements ContentSource {
         url.addQueryParameter("orderBy", sort);
         url.addQueryParameter("pageIndex", String.valueOf(Math.max(1, page)));
 
-        Document doc = getHtml(url.build().toString());
-        return doc == null ? SeriesPage.empty() : parseNovels(doc, true);
+        return parseNovels(getHtml(url.build().toString()), true);
     }
 
     private SeriesPage keywordSearch(String query, int page, String type) {
@@ -211,8 +211,7 @@ public class WebNovelNovelSource implements ContentSource {
         if (type != null) {
             url.addQueryParameter("type", type);
         }
-        Document doc = getHtml(url.build().toString());
-        return doc == null ? SeriesPage.empty() : parseNovels(doc, false);
+        return parseNovels(getHtml(url.build().toString()), false);
     }
 
     /**
@@ -250,10 +249,6 @@ public class WebNovelNovelSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + seriesExternalId);
-        if (doc == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
 
         Element cover = doc.selectFirst(".g_thumb > img");
         String title = cover != null && cover.hasAttr("alt") ? cover.attr("alt").trim() : "";
@@ -330,9 +325,6 @@ public class WebNovelNovelSource implements ContentSource {
     @Override
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + seriesExternalId + "/catalog");
-        if (doc == null) {
-            return List.of();
-        }
         boolean hideLocked = settings != null && settings.getBoolean(PREF_HIDE_LOCKED, false);
 
         List<SourceChapter> chapters = new ArrayList<>();
@@ -375,9 +367,6 @@ public class WebNovelNovelSource implements ContentSource {
     @Override
     public SourceChapterContent chapterContent(String chapterExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + chapterExternalId);
-        if (doc == null) {
-            return new SourceChapterContent(null, "");
-        }
         // Inline reader comments are attached to paragraphs; they are not part of the prose.
         doc.select(".para-comment").remove();
 
@@ -414,6 +403,11 @@ public class WebNovelNovelSource implements ContentSource {
         return url.startsWith("//") ? "https:" + url : BASE_URL + url;
     }
 
+    /**
+     * Fetches a page. A failed request throws instead of returning null: a block, a moved domain, or a
+     * timeout used to come back as an empty feed, which the apps can only render as "this source has
+     * nothing".
+     */
     private Document getHtml(String url) {
         Request req = new Request.Builder()
             .url(url)
@@ -425,14 +419,13 @@ public class WebNovelNovelSource implements ContentSource {
             ResponseBody body = res.body();
             String payload = body != null ? body.string() : null;
             if (!res.isSuccessful() || payload == null) {
-                int code = res.code();
-                LOG.log(System.Logger.Level.WARNING, () -> "WebNovel HTTP " + code + " for " + url);
-                return null;
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
             return Jsoup.parse(payload, url);
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            LOG.log(System.Logger.Level.WARNING, () -> "WebNovel request failed for " + url, e);
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

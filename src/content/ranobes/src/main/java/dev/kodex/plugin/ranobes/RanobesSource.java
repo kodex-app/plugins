@@ -11,6 +11,7 @@ import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourceChapterContent;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -130,9 +131,6 @@ public class RanobesSource implements ContentSource {
 
     private SeriesPage novelList(String url) {
         Document doc = getHtml(url);
-        if (doc == null) {
-            return SeriesPage.empty();
-        }
         List<SearchResult> items = new ArrayList<>();
         for (Element card : doc.select(".short-cont")) {
             Element link = card.selectFirst("h2.title a");
@@ -160,10 +158,6 @@ public class RanobesSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + seriesExternalId);
-        if (doc == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
 
         String title = null;
         String cover = null;
@@ -221,9 +215,6 @@ public class RanobesSource implements ContentSource {
         int pageCount = 1;
         do {
             Document doc = getHtml(listingBase + "/page/" + page);
-            if (doc == null) {
-                break;
-            }
             JsonNode data = dataBlob(doc);
             if (data == null) {
                 // No embedded blob — fall back to the rendered listing.
@@ -303,9 +294,6 @@ public class RanobesSource implements ContentSource {
     @Override
     public SourceChapterContent chapterContent(String chapterExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + chapterExternalId);
-        if (doc == null) {
-            return new SourceChapterContent(null, "");
-        }
         Element article = doc.getElementById("arrticle");
         if (article == null) {
             LOG.log(System.Logger.Level.WARNING,
@@ -331,23 +319,20 @@ public class RanobesSource implements ContentSource {
             ResponseBody body = res.body();
             String payload = body != null ? body.string() : null;
             if (!res.isSuccessful() || payload == null) {
-                int code = res.code();
-                LOG.log(System.Logger.Level.WARNING, () -> "Ranobes HTTP " + code + " for " + url);
-                return null;
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
             Document doc = Jsoup.parse(payload, url);
             // The bot check answers 200 with an interstitial, so it has to be spotted by title.
             String title = doc.title() == null ? "" : doc.title().trim();
             if (CHALLENGE_TITLES.contains(title)) {
-                LOG.log(System.Logger.Level.WARNING, () ->
-                    "Ranobes served a bot check (\"" + title + "\") for " + url
-                        + " — configure a Cloudflare solver (FlareSolverr/Byparr) in Kodex's network settings");
-                return null;
+                throw SourceUnavailableException.unreadable(displayName(), url, "bot check \"" + title
+                    + "\" — configure a Cloudflare solver (FlareSolverr/Byparr) in Kodex's network settings");
             }
             return doc;
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            LOG.log(System.Logger.Level.WARNING, () -> "Ranobes request failed for " + url, e);
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

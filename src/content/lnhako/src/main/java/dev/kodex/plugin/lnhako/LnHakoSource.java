@@ -10,6 +10,7 @@ import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourceChapterContent;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import dev.kodex.spi.common.http.ProviderRateLimitException;
 import okhttp3.HttpUrl;
@@ -123,9 +124,6 @@ public class LnHakoSource implements ContentSource {
     }
 
     private SeriesPage parseNovels(Document doc, int page) {
-        if (doc == null) {
-            return SeriesPage.empty();
-        }
         List<SearchResult> items = new ArrayList<>();
         for (Element item : doc.select(".thumb-item-flow")) {
             Element a = item.selectFirst(".series-title a");
@@ -154,10 +152,6 @@ public class LnHakoSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + path(seriesExternalId));
-        if (doc == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
         Element nameEl = doc.selectFirst(".series-name");
         String title = nameEl != null ? nameEl.text().trim() : seriesExternalId;
         String cover = coverFrom(doc.selectFirst(".series-cover .img-in-ratio"));
@@ -202,9 +196,6 @@ public class LnHakoSource implements ContentSource {
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + path(seriesExternalId));
         List<SourceChapter> chapters = new ArrayList<>();
-        if (doc == null) {
-            return chapters;
-        }
         int index = 0;
         // Hako groups chapters by volume; list them in document order (oldest → newest) with ascending numbers.
         for (Element volume : doc.select(".volume-list")) {
@@ -242,9 +233,6 @@ public class LnHakoSource implements ContentSource {
     @Override
     public SourceChapterContent chapterContent(String chapterExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + path(chapterExternalId));
-        if (doc == null) {
-            return new SourceChapterContent(null, "");
-        }
         // Hako encrypts the chapter text into <div id="chapter-c-protected" data-c="[...]"> and decrypts it
         // client-side (see /scripts/app.js). Reproduce that here; unprotected chapters fall back to the
         // plain #chapter-content. (The upstream LNReader plugin scrapes raw HTML and doesn't decrypt, so it
@@ -352,6 +340,11 @@ public class LnHakoSource implements ContentSource {
 
     // ---- HTTP / helpers --------------------------------------------------------------------------
 
+    /**
+     * Fetches a page. A failed request throws instead of returning null: a block, a moved domain, or a
+     * timeout used to come back as an empty feed, which the apps can only render as "this source has
+     * nothing".
+     */
     private Document getHtml(String url) {
         Request req = new Request.Builder()
             .url(url)
@@ -361,14 +354,15 @@ public class LnHakoSource implements ContentSource {
         try (Response res = http().newCall(req).execute()) {
             throwIfRateLimited(res);
             ResponseBody body = res.body();
-            if (!res.isSuccessful() || body == null) {
-                return null;
+            String payload = body == null ? null : body.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return Jsoup.parse(body.string(), url);
-        } catch (ProviderRateLimitException e) {
-            throw e; // must reach the core's retry/backoff handling — don't swallow with the IO failures below
+            return Jsoup.parse(payload, url);
+        } catch (RuntimeException e) {
+            throw e; // rate limit must reach the core's retry/backoff handling; unavailable is already right
         } catch (Exception e) {
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

@@ -10,6 +10,7 @@ import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourceChapterContent;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import dev.kodex.spi.common.http.ProviderRateLimitException;
 import okhttp3.HttpUrl;
@@ -112,9 +113,6 @@ public class RoyalRoadSource implements ContentSource {
     }
 
     private SeriesPage parseList(Document doc, int page) {
-        if (doc == null) {
-            return SeriesPage.empty();
-        }
         List<SearchResult> items = new ArrayList<>();
         for (Element item : doc.select(".fiction-list-item")) {
             Element titleA = item.selectFirst("h2.fiction-title a");
@@ -145,10 +143,6 @@ public class RoyalRoadSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + "/" + strip(seriesExternalId));
-        if (doc == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
         Element h1 = doc.selectFirst("h1");
         String title = h1 != null ? h1.text().trim() : seriesExternalId;
         Element img = doc.selectFirst("img.thumbnail");
@@ -193,9 +187,6 @@ public class RoyalRoadSource implements ContentSource {
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + "/" + strip(seriesExternalId));
         List<SourceChapter> chapters = new ArrayList<>();
-        if (doc == null) {
-            return chapters;
-        }
         var rows = doc.select("table#chapters tbody tr");
         int total = rows.size();
         int index = 0;
@@ -230,9 +221,6 @@ public class RoyalRoadSource implements ContentSource {
     @Override
     public SourceChapterContent chapterContent(String chapterExternalId, ProviderSettings settings) {
         String html = getHtmlString(BASE_URL + "/" + strip(chapterExternalId));
-        if (html == null) {
-            return new SourceChapterContent(null, "");
-        }
         Document doc = Jsoup.parse(html, BASE_URL);
         Element content = doc.selectFirst("div.chapter-content");
         if (content == null) {
@@ -252,10 +240,14 @@ public class RoyalRoadSource implements ContentSource {
     // ---- HTTP / helpers --------------------------------------------------------------------------
 
     private Document getHtml(String url) {
-        String body = getHtmlString(url);
-        return body == null ? null : Jsoup.parse(body, url);
+        return Jsoup.parse(getHtmlString(url), url);
     }
 
+    /**
+     * Runs one request and returns its body. A failed request throws instead of returning null: a
+     * block, a moved domain, or a timeout used to come back as an empty feed, which the apps can only
+     * render as "this source has nothing".
+     */
     private String getHtmlString(String url) {
         Request req = new Request.Builder()
             .url(url)
@@ -265,14 +257,15 @@ public class RoyalRoadSource implements ContentSource {
         try (Response res = http().newCall(req).execute()) {
             throwIfRateLimited(res);
             ResponseBody respBody = res.body();
-            if (!res.isSuccessful() || respBody == null) {
-                return null;
+            String payload = respBody == null ? null : respBody.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return respBody.string();
-        } catch (ProviderRateLimitException e) {
-            throw e; // must reach the core's retry/backoff handling — don't swallow with the IO failures below
+            return payload;
+        } catch (RuntimeException e) {
+            throw e; // rate limit must reach the core's retry/backoff handling; unavailable is already right
         } catch (Exception e) {
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

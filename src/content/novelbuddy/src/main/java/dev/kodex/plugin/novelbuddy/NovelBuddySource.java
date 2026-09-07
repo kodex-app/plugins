@@ -12,6 +12,7 @@ import dev.kodex.spi.content.SourceChapterContent;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.Filter;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -184,9 +185,6 @@ public class NovelBuddySource implements ContentSource {
         url.addQueryParameter("limit", String.valueOf(PAGE_SIZE));
 
         JsonNode root = getJson(url.build().toString());
-        if (root == null) {
-            return SeriesPage.empty();
-        }
         JsonNode items = root.path("data").path("items");
         List<SearchResult> results = new ArrayList<>();
         for (JsonNode item : items) {
@@ -220,8 +218,8 @@ public class NovelBuddySource implements ContentSource {
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         JsonNode manga = initialManga(seriesExternalId);
         if (manga == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
+            throw SourceUnavailableException.unreadable(displayName(),
+                BASE_URL + "/" + stripLeadingSlash(seriesExternalId), "no initialManga in the page state");
         }
 
         List<String> genres = new ArrayList<>();
@@ -261,9 +259,6 @@ public class NovelBuddySource implements ContentSource {
 
     private JsonNode nextData(String url) {
         Document doc = getHtml(url);
-        if (doc == null) {
-            return null;
-        }
         Element script = doc.getElementById("__NEXT_DATA__");
         if (script == null) {
             LOG.log(System.Logger.Level.WARNING, () -> "NovelBuddy: no __NEXT_DATA__ payload at " + url);
@@ -325,7 +320,8 @@ public class NovelBuddySource implements ContentSource {
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         JsonNode manga = initialManga(seriesExternalId);
         if (manga == null) {
-            return List.of();
+            throw SourceUnavailableException.unreadable(displayName(),
+                BASE_URL + "/" + stripLeadingSlash(seriesExternalId), "no initialManga in the page state");
         }
         String mangaId = text(manga.get("id"));
         if (mangaId == null) {
@@ -336,7 +332,7 @@ public class NovelBuddySource implements ContentSource {
         String contentVersion = text(manga.has("content_version") ? manga.get("content_version") : manga.get("cv"));
         String url = API_URL + "/titles/" + mangaId + "/chapters"
             + (contentVersion == null ? "" : "?cv=" + contentVersion);
-        JsonNode root = getJson(url);
+        JsonNode root = getJsonOrNull(url);
 
         JsonNode chapters = root == null ? null : root.path("data").path("chapters");
         boolean apiUsable = root != null && root.path("success").asBoolean(false)
@@ -379,7 +375,7 @@ public class NovelBuddySource implements ContentSource {
         String content = null;
 
         if (novelId != null && chapterId != null) {
-            JsonNode root = getJson(API_URL + "/titles/" + novelId + "/chapters/" + chapterId);
+            JsonNode root = getJsonOrNull(API_URL + "/titles/" + novelId + "/chapters/" + chapterId);
             if (root != null) {
                 JsonNode chapter = root.path("data").path("chapter");
                 content = text(chapter.get("content"));
@@ -427,19 +423,23 @@ public class NovelBuddySource implements ContentSource {
         return null;
     }
 
+    /**
+     * Fetches a page. A failed request throws instead of returning null: a block, a moved domain, or a
+     * timeout used to come back as an empty feed, which the apps can only render as "this source has
+     * nothing".
+     */
     private Document getHtml(String url) {
         try (Response res = execute(url, "text/html,application/xhtml+xml,*/*")) {
             ResponseBody body = res.body();
             String payload = body != null ? body.string() : null;
             if (!res.isSuccessful() || payload == null) {
-                int code = res.code();
-                LOG.log(System.Logger.Level.WARNING, () -> "NovelBuddy HTTP " + code + " for " + url);
-                return null;
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
             return Jsoup.parse(payload, url);
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            LOG.log(System.Logger.Level.WARNING, () -> "NovelBuddy request failed for " + url, e);
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 
@@ -448,14 +448,27 @@ public class NovelBuddySource implements ContentSource {
             ResponseBody body = res.body();
             String payload = body != null ? body.string() : null;
             if (!res.isSuccessful() || payload == null) {
-                int code = res.code();
-                LOG.log(System.Logger.Level.WARNING, () -> "NovelBuddy HTTP " + code + " for " + url);
-                return null;
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
             return MAPPER.readTree(payload);
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            LOG.log(System.Logger.Level.WARNING, () -> "NovelBuddy request failed for " + url, e);
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
+        }
+    }
+
+    /**
+     * {@link #getJson} for the two API calls that have a real fallback — the chapter list (older titles
+     * ship it inline in the page state) and the chapter body (the rendered page carries it too). Only
+     * those may swallow a failure; everything else must surface it.
+     */
+    private JsonNode getJsonOrNull(String url) {
+        try {
+            return getJson(url);
+        } catch (SourceUnavailableException e) {
+            LOG.log(System.Logger.Level.WARNING, e::getMessage);
+            return null;
         }
     }
 

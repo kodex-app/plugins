@@ -12,6 +12,7 @@ import dev.kodex.spi.content.SeriesStatus;
 import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
@@ -110,9 +111,6 @@ public class ManhwaZoneSource implements ContentSource {
     }
 
     private SeriesPage parseMangaList(Document doc) {
-        if (doc == null) {
-            return SeriesPage.empty();
-        }
         List<SearchResult> mangas = new ArrayList<>();
         var elements = doc.select("article.group");
         for (Element element : elements) {
@@ -137,10 +135,6 @@ public class ManhwaZoneSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + seriesExternalId);
-        if (doc == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
         Element titleEl = doc.selectFirst("h1.page-title");
         Element descEl = doc.selectFirst("p.page-subtitle");
         Element cover = doc.selectFirst("img.aspect-\\[7\\/10\\], figure.relative img");
@@ -189,9 +183,6 @@ public class ManhwaZoneSource implements ContentSource {
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         List<SourceChapter> chapters = new ArrayList<>();
         Document doc = getHtml(BASE_URL + seriesExternalId);
-        if (doc == null) {
-            return chapters;
-        }
         Element wireDiv = doc.selectFirst("div[wire:snapshot][wire:id][wire:init=bootLoad]");
         if (wireDiv == null) {
             return chapters;
@@ -202,9 +193,6 @@ public class ManhwaZoneSource implements ContentSource {
 
         String payload = buildBootLoadPayload(csrfToken, snapshot);
         String body = postJson(BASE_URL + "/livewire/update", payload);
-        if (body == null) {
-            return chapters;
-        }
         try {
             JsonNode root = MAPPER.readTree(body);
             JsonNode components = root.path("components");
@@ -232,8 +220,11 @@ public class ManhwaZoneSource implements ContentSource {
                 chapters.add(new SourceChapter(relative(webUrl), name == null ? "Chapter" : name,
                     parseNumber(name), null, date, Map.of()));
             }
-        } catch (Exception ignored) {
-            // fail soft
+        } catch (Exception e) {
+            // The Livewire payload is the only chapter source here, so a shape change is an outage,
+            // not an empty series — say so instead of reporting "no chapters".
+            throw SourceUnavailableException.unreadable(displayName(), BASE_URL + "/livewire/update",
+                "unreadable Livewire chapter payload (" + e.getClass().getSimpleName() + ")");
         }
         return chapters;
     }
@@ -259,9 +250,6 @@ public class ManhwaZoneSource implements ContentSource {
     public List<SourcePage> pageList(String chapterExternalId, ProviderSettings settings) {
         List<SourcePage> pages = new ArrayList<>();
         Document doc = getHtml(BASE_URL + chapterExternalId);
-        if (doc == null) {
-            return pages;
-        }
         Map<String, String> headers = Map.of("Referer", BASE_URL + "/", "User-Agent", USER_AGENT);
 
         Element script = doc.selectFirst("script:containsData(__RS_CONF__)");
@@ -306,8 +294,7 @@ public class ManhwaZoneSource implements ContentSource {
     // ---- Helpers ---------------------------------------------------------------------------------
 
     private Document getHtml(String url) {
-        String body = getString(url);
-        return body == null ? null : Jsoup.parse(body, url);
+        return Jsoup.parse(getString(url), url);
     }
 
     private String getString(String url) {
@@ -330,15 +317,24 @@ public class ManhwaZoneSource implements ContentSource {
         return execute(req);
     }
 
+    /**
+     * Runs one request and returns its body. A failed request throws instead of returning null: a
+     * block, a moved domain, or a timeout used to come back as an empty feed, which the apps can only
+     * render as "this source has nothing".
+     */
     private String execute(Request req) {
+        String url = req.url().toString();
         try (Response res = http().newCall(req).execute()) {
             ResponseBody body = res.body();
-            if (!res.isSuccessful() || body == null) {
-                return null;
+            String payload = body == null ? null : body.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return body.string();
+            return payload;
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            return null;
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

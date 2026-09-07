@@ -10,6 +10,7 @@ import dev.kodex.spi.content.SeriesStatus;
 import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import okhttp3.HttpUrl;
 import okhttp3.MultipartBody;
@@ -121,7 +122,8 @@ public class RawkumaSource implements ContentSource {
     private SeriesPage advancedSearch(int page, String query, String orderBy) {
         String nonceValue = nonce();
         if (nonceValue == null) {
-            return SeriesPage.empty();
+            throw SourceUnavailableException.unreadable(displayName(), BASE_URL,
+                "no search_nonce on the search form — the theme's search endpoint can't be called");
         }
         MultipartBody body = new MultipartBody.Builder()
             .setType(MultipartBody.FORM)
@@ -142,9 +144,6 @@ public class RawkumaSource implements ContentSource {
             .build();
 
         String fragment = postForm(BASE_URL + "/wp-admin/admin-ajax.php?action=advanced_search", body);
-        if (fragment == null) {
-            return SeriesPage.empty();
-        }
         Document doc = Jsoup.parseBodyFragment(fragment, BASE_URL);
         List<String> slugs = new ArrayList<>();
         for (Element a : doc.select("div > a[href*=/manga/]:has(> img)")) {
@@ -179,7 +178,7 @@ public class RawkumaSource implements ContentSource {
         url.addQueryParameter("_embed", null);
         Map<String, SearchResult> bySlug = new LinkedHashMap<>();
         JsonNode arr = getJson(url.build().toString());
-        if (arr == null || !arr.isArray()) {
+        if (!arr.isArray()) {
             return bySlug;
         }
         for (JsonNode manga : arr) {
@@ -286,9 +285,6 @@ public class RawkumaSource implements ContentSource {
             .addQueryParameter("action", "chapter_list")
             .build();
         String fragment = getString(url.toString());
-        if (fragment == null) {
-            return chapters;
-        }
         Document doc = Jsoup.parseBodyFragment(fragment, BASE_URL);
         for (Element a : doc.select("div a:has(time)")) {
             Element nameEl = a.selectFirst("span");
@@ -307,9 +303,6 @@ public class RawkumaSource implements ContentSource {
     public List<SourcePage> pageList(String chapterExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + chapterExternalId);
         List<SourcePage> pages = new ArrayList<>();
-        if (doc == null) {
-            return pages;
-        }
         Map<String, String> headers = Map.of("Referer", BASE_URL + "/", "User-Agent", USER_AGENT);
         var imgs = doc.select("main .relative section > img");
         for (int i = 0; i < imgs.size(); i++) {
@@ -335,7 +328,7 @@ public class RawkumaSource implements ContentSource {
             .addQueryParameter("_embed", null)
             .build();
         JsonNode arr = getJson(url.toString());
-        return arr != null && arr.isArray() && !arr.isEmpty() ? arr.get(0) : null;
+        return arr.isArray() && !arr.isEmpty() ? arr.get(0) : null;
     }
 
     /** Lazily fetches and caches the theme's search nonce (required by {@code advanced_search}). */
@@ -349,9 +342,6 @@ public class RawkumaSource implements ContentSource {
                 return nonce;
             }
             String body = getString(BASE_URL + "/wp-admin/admin-ajax.php?type=search_form&action=get_nonce");
-            if (body == null) {
-                return null;
-            }
             Element input = Jsoup.parseBodyFragment(body).selectFirst("input[name=search_nonce]");
             String value = input != null ? input.attr("value") : null;
             if (value != null && !value.isBlank()) {
@@ -362,19 +352,15 @@ public class RawkumaSource implements ContentSource {
     }
 
     private Document getHtml(String url) {
-        String body = getString(url);
-        return body == null ? null : Jsoup.parse(body, url);
+        return Jsoup.parse(getString(url), url);
     }
 
     private JsonNode getJson(String url) {
         String body = getString(url);
-        if (body == null) {
-            return null;
-        }
         try {
             return MAPPER.readTree(body);
         } catch (Exception e) {
-            return null;
+            throw SourceUnavailableException.unreadable(displayName(), url, "not JSON");
         }
     }
 
@@ -396,15 +382,24 @@ public class RawkumaSource implements ContentSource {
         return execute(req);
     }
 
+    /**
+     * Runs one request and returns its body. A failed request throws instead of returning null: a
+     * block, a moved domain, or a timeout used to come back as an empty feed, which the apps can only
+     * render as "this source has nothing".
+     */
     private String execute(Request req) {
+        String url = req.url().toString();
         try (Response res = http().newCall(req).execute()) {
             ResponseBody body = res.body();
-            if (!res.isSuccessful() || body == null) {
-                return null;
+            String payload = body == null ? null : body.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return body.string();
+            return payload;
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

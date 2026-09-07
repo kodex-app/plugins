@@ -10,6 +10,7 @@ import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourceChapterContent;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import dev.kodex.spi.common.http.ProviderRateLimitException;
 import okhttp3.OkHttpClient;
@@ -164,26 +165,24 @@ public class LnoriSource implements ContentSource {
         }
         Document doc = getHtml(BASE_URL + "/library");
         List<LibraryNovel> list = new ArrayList<>();
-        if (doc != null) {
-            for (Element card : doc.select("article.card")) {
-                String name = card.attr("data-t").trim();
-                String path = toPath(card.select("a.stretched-link").attr("href"));
-                if (name.isEmpty() || path == null) {
-                    continue;
-                }
-                String author = card.attr("data-a").trim();
-                List<String> tags = new ArrayList<>();
-                for (String t : card.attr("data-tags").split(",")) {
-                    String tag = t.trim().toLowerCase(Locale.ROOT);
-                    if (!tag.isEmpty()) {
-                        tags.add(tag);
-                    }
-                }
-                Element img = card.selectFirst(".card-cover img");
-                String cover = img != null ? absUrl(firstNonBlank(img.attr("src"), img.attr("data-src"))) : null;
-                int year = parseInt(card.attr("data-d")); // data-d = release year (the site's "date"/Year Released sort)
-                list.add(new LibraryNovel(path, name, cover, author, tags, year));
+        for (Element card : doc.select("article.card")) {
+            String name = card.attr("data-t").trim();
+            String path = toPath(card.select("a.stretched-link").attr("href"));
+            if (name.isEmpty() || path == null) {
+                continue;
             }
+            String author = card.attr("data-a").trim();
+            List<String> tags = new ArrayList<>();
+            for (String t : card.attr("data-tags").split(",")) {
+                String tag = t.trim().toLowerCase(Locale.ROOT);
+                if (!tag.isEmpty()) {
+                    tags.add(tag);
+                }
+            }
+            Element img = card.selectFirst(".card-cover img");
+            String cover = img != null ? absUrl(firstNonBlank(img.attr("src"), img.attr("data-src"))) : null;
+            int year = parseInt(card.attr("data-d")); // data-d = release year (the site's "date"/Year Released sort)
+            list.add(new LibraryNovel(path, name, cover, author, tags, year));
         }
         if (!list.isEmpty()) {
             libraryCache = list;
@@ -197,10 +196,6 @@ public class LnoriSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + "/" + strip(seriesExternalId));
-        if (doc == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
         Element titleEl = doc.selectFirst(".hero-card h1.s-title");
         String title = titleEl != null ? titleEl.text().trim() : seriesExternalId;
         Element img = doc.selectFirst(".hero-card .cover-wrap img");
@@ -230,9 +225,6 @@ public class LnoriSource implements ContentSource {
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         List<SourceChapter> chapters = new ArrayList<>();
         Document doc = getHtml(BASE_URL + "/" + strip(seriesExternalId));
-        if (doc == null) {
-            return chapters;
-        }
         // One entry per volume — parse only the series page's volume links; don't fetch each /book/ page
         // here (that would be N requests per refresh). A volume's full text is fetched lazily in
         // chapterContent when the user actually reads it. Unique hrefs, keeping the longest link text
@@ -339,9 +331,6 @@ public class LnoriSource implements ContentSource {
         String volPath = hash < 0 ? chapterExternalId : chapterExternalId.substring(0, hash);
 
         Document doc = getHtml(BASE_URL + "/" + strip(volPath));
-        if (doc == null) {
-            return new SourceChapterContent(null, "");
-        }
         Element h1 = doc.selectFirst("h1");
         String title = h1 != null ? h1.text().trim() : null;
 
@@ -375,6 +364,11 @@ public class LnoriSource implements ContentSource {
 
     // ---- HTTP / helpers --------------------------------------------------------------------------
 
+    /**
+     * Fetches a page. A failed request throws instead of returning null: a block, a moved domain, or a
+     * timeout used to come back as an empty feed, which the apps can only render as "this source has
+     * nothing".
+     */
     private Document getHtml(String url) {
         Request req = new Request.Builder()
             .url(url)
@@ -384,14 +378,15 @@ public class LnoriSource implements ContentSource {
         try (Response res = http().newCall(req).execute()) {
             throwIfRateLimited(res);
             ResponseBody body = res.body();
-            if (!res.isSuccessful() || body == null) {
-                return null;
+            String payload = body == null ? null : body.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return Jsoup.parse(body.string(), url);
-        } catch (ProviderRateLimitException e) {
-            throw e; // must reach the core's retry/backoff handling — don't swallow with the IO failures below
+            return Jsoup.parse(payload, url);
+        } catch (RuntimeException e) {
+            throw e; // rate limit must reach the core's retry/backoff handling; unavailable is already right
         } catch (Exception e) {
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

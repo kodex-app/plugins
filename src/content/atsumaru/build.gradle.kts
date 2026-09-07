@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-version = "1.2.0" // seriesExternalId carries the /manga path; details fall back to the search index + retry
+version = "1.3.0" // report fetch failures instead of an empty feed
 
 dependencies {
     compileOnly(libs.kodex.spi)

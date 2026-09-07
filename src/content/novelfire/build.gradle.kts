@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-version = "1.0.1" // fail loudly on an empty chapter body instead of caching a blank chapter
+version = "1.0.2" // report fetch failures instead of an empty feed
 
 dependencies {
     compileOnly(libs.kodex.spi)

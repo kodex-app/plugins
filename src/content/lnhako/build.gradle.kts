@@ -2,6 +2,8 @@ plugins {
     java
 }
 
+version = "1.0.1" // report fetch failures instead of an empty feed
+
 dependencies {
     compileOnly(libs.kodex.spi)
     compileOnly(libs.jsoup) // provided by the host classloader at runtime

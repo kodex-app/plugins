@@ -10,6 +10,7 @@ import dev.kodex.spi.content.SeriesStatus;
 import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
@@ -102,9 +103,6 @@ public class VortexScansSource implements ContentSource {
             url.setQueryParameter("orderDirection", orderDirection);
         }
         JsonNode root = getJson(url.build().toString());
-        if (root == null) {
-            return SeriesPage.empty();
-        }
         List<SearchResult> items = new ArrayList<>();
         for (JsonNode post : root.path("posts")) {
             items.add(summary(post));
@@ -145,11 +143,10 @@ public class VortexScansSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         int postId = idPart(seriesExternalId);
-        JsonNode root = postId > 0 ? getJson(API + "/api/post?postId=" + postId) : null;
-        if (root == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
+        if (postId <= 0) {
+            throw new SourceUnavailableException(displayName() + ": no post id in \"" + seriesExternalId + "\"");
         }
+        JsonNode root = getJson(API + "/api/post?postId=" + postId);
         JsonNode post = root.path("post");
         String slug = post.path("slug").asText(slugPart(seriesExternalId));
         String externalId = slug + "#" + post.path("id").asInt(postId);
@@ -199,10 +196,10 @@ public class VortexScansSource implements ContentSource {
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         int postId = idPart(seriesExternalId);
         List<SourceChapter> chapters = new ArrayList<>();
-        JsonNode root = postId > 0 ? getJson(API + "/api/post?postId=" + postId) : null;
-        if (root == null) {
-            return chapters;
+        if (postId <= 0) {
+            throw new SourceUnavailableException(displayName() + ": no post id in \"" + seriesExternalId + "\"");
         }
+        JsonNode root = getJson(API + "/api/post?postId=" + postId);
         JsonNode post = root.path("post");
         String mangaSlug = post.path("slug").asText(slugPart(seriesExternalId));
         for (JsonNode ch : post.path("chapters")) {
@@ -238,10 +235,10 @@ public class VortexScansSource implements ContentSource {
     public List<SourcePage> pageList(String chapterExternalId, ProviderSettings settings) {
         int chapterId = idPart(chapterExternalId);
         List<SourcePage> pages = new ArrayList<>();
-        JsonNode root = chapterId > 0 ? getJson(API + "/api/chapter?chapterId=" + chapterId) : null;
-        if (root == null) {
-            return pages;
+        if (chapterId <= 0) {
+            throw new SourceUnavailableException(displayName() + ": no chapter id in \"" + chapterExternalId + "\"");
         }
+        JsonNode root = getJson(API + "/api/chapter?chapterId=" + chapterId);
         JsonNode chapter = root.path("chapter");
         Map<String, String> headers = Map.of("Referer", SITE + "/", "User-Agent", USER_AGENT);
         List<JsonNode> images = new ArrayList<>();
@@ -263,6 +260,10 @@ public class VortexScansSource implements ContentSource {
 
     // ---- Helpers ---------------------------------------------------------------------------------
 
+    /**
+     * Calls the JSON API. A failed request throws instead of returning null: an API outage used to
+     * come back as an empty feed, which the apps can only render as "this source has nothing".
+     */
     private JsonNode getJson(String url) {
         Request req = new Request.Builder()
             .url(url)
@@ -273,12 +274,15 @@ public class VortexScansSource implements ContentSource {
             .get().build();
         try (Response res = http().newCall(req).execute()) {
             ResponseBody body = res.body();
-            if (!res.isSuccessful() || body == null) {
-                return null;
+            String payload = body == null ? null : body.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return MAPPER.readTree(body.string());
+            return MAPPER.readTree(payload);
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

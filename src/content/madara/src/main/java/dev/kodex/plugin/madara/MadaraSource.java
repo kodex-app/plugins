@@ -9,6 +9,7 @@ import dev.kodex.spi.content.SourceChapter;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.Filter;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import dev.kodex.spi.common.http.HttpClientProvider;
 import okhttp3.FormBody;
 import okhttp3.HttpUrl;
@@ -135,9 +136,6 @@ abstract class MadaraSource implements ContentSource {
     }
 
     private SeriesPage parseList(Document doc, String selector) {
-        if (doc == null) {
-            return SeriesPage.empty();
-        }
         List<SearchResult> items = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         for (Element element : doc.select(selector)) {
@@ -213,10 +211,6 @@ abstract class MadaraSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(baseUrl + seriesExternalId);
-        if (doc == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
         Element titleEl = doc.selectFirst("div.post-title h3, div.post-title h1, #manga-title > h1");
         String title = titleEl != null ? titleEl.ownText() : seriesExternalId;
 
@@ -284,9 +278,6 @@ abstract class MadaraSource implements ContentSource {
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(baseUrl + seriesExternalId);
         List<SourceChapter> chapters = new ArrayList<>();
-        if (doc == null) {
-            return chapters;
-        }
         var elements = doc.select("li.wp-manga-chapter");
         if (elements.isEmpty()) {
             Element wrapper = doc.selectFirst("div[id^=manga-chapters-holder]");
@@ -363,9 +354,6 @@ abstract class MadaraSource implements ContentSource {
     public List<SourcePage> pageList(String chapterExternalId, ProviderSettings settings) {
         Document doc = getHtml(baseUrl + chapterExternalId);
         List<SourcePage> pages = new ArrayList<>();
-        if (doc == null) {
-            return pages;
-        }
         Map<String, String> headers = Map.of("Referer", baseUrl + "/", "User-Agent", USER_AGENT);
         var elements = doc.select("div.page-break, li.blocks-gallery-item, "
             + ".reading-content .text-left:not(:has(.blocks-gallery-item)) img");
@@ -495,16 +483,24 @@ abstract class MadaraSource implements ContentSource {
         return null;
     }
 
+    /**
+     * Fetches a page. A failed request throws instead of returning null: a Cloudflare 403, a moved
+     * domain, or a timeout used to come back as an empty feed, which the apps can only render as
+     * "this source has nothing".
+     */
     private Document getHtml(String url) {
         Request req = browserHeaders(new Request.Builder().url(url)).get().build();
         try (Response res = http().newCall(req).execute()) {
             ResponseBody body = res.body();
-            if (!res.isSuccessful() || body == null) {
-                return null;
+            String payload = body == null ? null : body.string();
+            if (!res.isSuccessful() || payload == null) {
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
-            return Jsoup.parse(body.string(), url);
+            return Jsoup.parse(payload, url);
+        } catch (RuntimeException e) {
+            throw e; // already the right failure (unavailable / rate limit)
         } catch (Exception e) {
-            return null;
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 

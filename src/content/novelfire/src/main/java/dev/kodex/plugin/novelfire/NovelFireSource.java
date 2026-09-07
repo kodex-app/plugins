@@ -13,6 +13,7 @@ import dev.kodex.spi.content.SourceChapterContent;
 import dev.kodex.spi.content.SourcePage;
 import dev.kodex.spi.content.filter.Filter;
 import dev.kodex.spi.content.filter.FilterList;
+import dev.kodex.spi.common.http.SourceUnavailableException;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -122,9 +123,7 @@ public class NovelFireSource implements ContentSource {
             .addQueryParameter("keyword", q)
             .addQueryParameter("page", String.valueOf(Math.max(1, page)))
             .build();
-        Document doc = getHtml(url.toString());
-        return doc == null ? SeriesPage.empty()
-            : parseNovels(doc, ".novel-list.chapters .novel-item");
+        return parseNovels(getHtml(url.toString()), ".novel-list.chapters .novel-item");
     }
 
     /** The {@code /search-adv} form, which is also how the popular and latest feeds are produced. */
@@ -195,8 +194,7 @@ public class NovelFireSource implements ContentSource {
         }
         url.addQueryParameter("page", String.valueOf(Math.max(1, page)));
 
-        Document doc = getHtml(url.build().toString());
-        return doc == null ? SeriesPage.empty() : parseNovels(doc, ".novel-item");
+        return parseNovels(getHtml(url.build().toString()), ".novel-item");
     }
 
     private SeriesPage parseNovels(Document doc, String selector) {
@@ -234,10 +232,6 @@ public class NovelFireSource implements ContentSource {
     @Override
     public SearchResult seriesDetails(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + "/" + seriesExternalId);
-        if (doc == null) {
-            return new SearchResult(id(), seriesExternalId, seriesExternalId, null, null,
-                null, null, List.of(), SeriesStatus.UNKNOWN, Map.of());
-        }
 
         Element titleEl = doc.selectFirst(".novel-title");
         Element coverEl = doc.selectFirst(".cover > img");
@@ -309,9 +303,6 @@ public class NovelFireSource implements ContentSource {
     @Override
     public List<SourceChapter> listChapters(String seriesExternalId, ProviderSettings settings) {
         Document doc = getHtml(BASE_URL + "/" + seriesExternalId);
-        if (doc == null) {
-            return List.of();
-        }
         Element report = doc.selectFirst("#novel-report");
         String postId = report == null ? null : emptyToNull(report.attr("report-post_id"));
         if (postId != null) {
@@ -356,9 +347,6 @@ public class NovelFireSource implements ContentSource {
             .build();
 
         String payload = getText(url.toString(), "application/json");
-        if (payload == null) {
-            return List.of();
-        }
         if (payload.contains("Page Not Found 404")) {
             LOG.log(System.Logger.Level.INFO, () -> "Novel Fire: chapter ajax unavailable for " + novelPath);
             return List.of();
@@ -405,9 +393,6 @@ public class NovelFireSource implements ContentSource {
         int page = 1;
         while (true) {
             Document doc = getHtml(BASE_URL + "/" + novelPath + "/chapters?page=" + page);
-            if (doc == null) {
-                break;
-            }
             var rows = doc.select(".chapter-list li a[href]");
             if (rows.isEmpty()) {
                 break;
@@ -445,9 +430,6 @@ public class NovelFireSource implements ContentSource {
     public SourceChapterContent chapterContent(String chapterExternalId, ProviderSettings settings) {
         String url = BASE_URL + "/" + chapterExternalId;
         Document doc = getHtml(url);
-        if (doc == null) {
-            throw new IllegalStateException("Novel Fire: chapter page could not be fetched (" + url + ") - retry");
-        }
         Element content = doc.getElementById("content");
         if (content == null) {
             LOG.log(System.Logger.Level.WARNING, () -> "Novel Fire: no #content body at " + url);
@@ -491,16 +473,10 @@ public class NovelFireSource implements ContentSource {
     }
 
     private Document getHtml(String url) {
-        String payload = getText(url, "text/html,application/xhtml+xml,*/*");
-        if (payload == null) {
-            return null;
-        }
-        Document doc = Jsoup.parse(payload, url);
+        Document doc = Jsoup.parse(getText(url, "text/html,application/xhtml+xml,*/*"), url);
         if (doc.title() != null && doc.title().contains("Cloudflare")) {
-            LOG.log(System.Logger.Level.WARNING, () ->
-                "Novel Fire is behind a Cloudflare block for " + url
-                    + " — configure a Cloudflare solver (FlareSolverr/Byparr) in Kodex's network settings");
-            return null;
+            throw SourceUnavailableException.unreadable(displayName(), url, "Cloudflare block"
+                + " — configure a Cloudflare solver (FlareSolverr/Byparr) in Kodex's network settings");
         }
         return doc;
     }
@@ -517,16 +493,13 @@ public class NovelFireSource implements ContentSource {
             String payload = body != null ? body.string() : null;
             throwIfThrottled(res.code(), payload);
             if (!res.isSuccessful() || payload == null) {
-                int code = res.code();
-                LOG.log(System.Logger.Level.WARNING, () -> "Novel Fire HTTP " + code + " for " + url);
-                return null;
+                throw SourceUnavailableException.http(displayName(), url, res.code(), payload);
             }
             return payload;
-        } catch (ProviderRateLimitException e) {
-            throw e;
+        } catch (RuntimeException e) {
+            throw e; // rate limit must reach the core's retry/backoff handling; unavailable is already right
         } catch (Exception e) {
-            LOG.log(System.Logger.Level.WARNING, () -> "Novel Fire request failed for " + url, e);
-            return null; // fail soft, per the SPI contract
+            throw SourceUnavailableException.transport(displayName(), url, e);
         }
     }
 
