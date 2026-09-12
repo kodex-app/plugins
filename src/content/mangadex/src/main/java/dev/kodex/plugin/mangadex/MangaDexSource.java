@@ -21,6 +21,8 @@ import org.pf4j.Extension;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -91,9 +93,16 @@ public class MangaDexSource implements ContentSource {
 
     // ---- Browse / search -------------------------------------------------------------------------
 
+    /**
+     * Most-followed titles created in the last 30 days, matching the site's "Popular New Titles" rail
+     * (upstream #18899) rather than the static all-time list.
+     */
     @Override
     public SeriesPage popular(int page, ProviderSettings settings) {
-        return mangaList(API + "/manga?order[followedCount]=desc" + commonMangaParams(page));
+        String createdAtSince = LocalDate.now(ZoneOffset.UTC).minusDays(30).atStartOfDay()
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"));
+        return mangaList(API + "/manga?order[followedCount]=desc&createdAtSince=" + createdAtSince
+            + commonMangaParams(page));
     }
 
     @Override

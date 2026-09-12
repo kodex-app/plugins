@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-version = "1.0.1" // report fetch failures instead of an empty feed
+version = "1.0.2" // popular = most followed among titles created in the last 30 days (upstream #18899)
 
 dependencies {
     compileOnly(libs.kodex.spi)

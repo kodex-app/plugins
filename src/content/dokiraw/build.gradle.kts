@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-version = "1.0.4" // report fetch failures instead of an empty feed
+version = "1.0.5" // domain moved to dokiraw.diy (upstream b658a2c22)
 
 dependencies {
     compileOnly(libs.kodex.spi)

@@ -33,7 +33,7 @@ import java.util.regex.Pattern;
 public class DokirawSource implements ContentSource {
 
     // Domain moved again 2026-08 (upstream f6ab58ae8, "Update domain: Dokiraw"); .work followed .cloud.
-    private static final String BASE_URL = "https://dokiraw.casa";
+    private static final String BASE_URL = "https://dokiraw.diy";
     private static final String USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
     private static final Pattern NUMBER = Pattern.compile("(\\d+(?:\\.\\d+)?)");
