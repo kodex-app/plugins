@@ -1,0 +1,825 @@
+[
+    {
+        "id": "atsumaru",
+        "name": "atsumaru",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "2327480808438768017",
+                "name": "Atsumaru",
+                "lang": "en",
+                "kind": "COMIC",
+                "baseUrl": "https://atsu.moe"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.3.0",
+                "url": "content/content-atsumaru-1.3.0.jar",
+                "sha512sum": "87cc13c0e431846fb35cba21b57f8e788edb28de00befadbb7ddafa9fdb7296dfea804f370e0267ecd3a1fd2308034bae036b127c5fa4bcfeb23c12dcd77083e",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "dokiraw",
+        "name": "dokiraw",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "3967449247820755680",
+                "name": "Dokiraw",
+                "lang": "ja",
+                "kind": "COMIC",
+                "baseUrl": "https://dokiraw.diy"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.5",
+                "url": "content/content-dokiraw-1.0.5.jar",
+                "sha512sum": "d734a07007fe1dc3f36c35f616b7f336fa80d28f48495398ec4fb141c23958d8146d4b3a96efcd7e8df9ad3dcce6a549fb350c9959d15ee9dddfbb3d73cbdf08",
+                "date": "2026-09-12T01:52:56.742Z"
+            }
+        ]
+    },
+    {
+        "id": "hentaifox",
+        "name": "hentaifox",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "7945033982379409892",
+                "name": "HentaiFox",
+                "lang": "en",
+                "kind": "COMIC",
+                "baseUrl": "https://hentaifox.com"
+            },
+            {
+                "id": "8640201438684762638",
+                "name": "HentaiFox",
+                "lang": "ja",
+                "kind": "COMIC",
+                "baseUrl": "https://hentaifox.com"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.1",
+                "url": "content/content-hentaifox-1.0.1.jar",
+                "sha512sum": "3e04ad2ccf576dda918803817d53bcad47e226603270a34c948b4a0326e0c9825987af27b8bb0b94d5ef42fb73629ed2d93838eddfd613204a85fd4bb6bc3111",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "hentainexus",
+        "name": "hentainexus",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "7719798645438596394",
+                "name": "HentaiNexus",
+                "lang": "en",
+                "kind": "COMIC",
+                "baseUrl": "https://hentainexus.com"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.2",
+                "url": "content/content-hentainexus-1.0.2.jar",
+                "sha512sum": "50dd6875fe117b0693f5bc4b5fb09d75928f3043d032a957171cca5b2e072043cae308849433bff65be0ab9d18eaed620edf7fb6a44276bc23e2275cc0aa1843",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "kagane",
+        "name": "kagane",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "7861921616625741963",
+                "name": "Kagane",
+                "lang": "ar",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "538178062602483073",
+                "name": "Kagane",
+                "lang": "zh",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "4024736764982024684",
+                "name": "Kagane",
+                "lang": "en",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "6053574930456302165",
+                "name": "Kagane",
+                "lang": "fr",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "253007717341293260",
+                "name": "Kagane",
+                "lang": "de",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "9016992318016575502",
+                "name": "Kagane",
+                "lang": "hi",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "7702420917357144001",
+                "name": "Kagane",
+                "lang": "id",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "1471532184931679941",
+                "name": "Kagane",
+                "lang": "it",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "1157710231944574609",
+                "name": "Kagane",
+                "lang": "ja",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "1720654391539317254",
+                "name": "Kagane",
+                "lang": "ko",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "1008382500205235233",
+                "name": "Kagane",
+                "lang": "pl",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "3281832279225761326",
+                "name": "Kagane",
+                "lang": "pt",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "8929946374100381402",
+                "name": "Kagane",
+                "lang": "pt-BR",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "8751507648303673848",
+                "name": "Kagane",
+                "lang": "ru",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "6291099060619088371",
+                "name": "Kagane",
+                "lang": "es",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "3249170492103400191",
+                "name": "Kagane",
+                "lang": "es-419",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "2006734767320263070",
+                "name": "Kagane",
+                "lang": "th",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            },
+            {
+                "id": "8791972639916297003",
+                "name": "Kagane",
+                "lang": "vi",
+                "kind": "COMIC",
+                "baseUrl": "https://kagane.to"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.1",
+                "url": "content/content-kagane-1.0.1.jar",
+                "sha512sum": "ac964ff6e3a2f76eb9f5f6f04118867399ff8cab57fb777f4ade6680a1137ba0e8b591251dc704ebd3a527b94fd4dc29552223232908acec21b69f9dc16dde2f",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "lnhako",
+        "name": "lnhako",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "5883880885932515437",
+                "name": "Hako",
+                "lang": "vi",
+                "kind": "BOOK",
+                "baseUrl": "https://ln.hako.vn"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.1",
+                "url": "content/content-lnhako-1.0.1.jar",
+                "sha512sum": "4bae31b43492babaa2843c4793d3173957fcc78e0b35cad9c33fe2fde395c2340d07bddb3f5ed81bcca1c53b8d967266c9bb81a2ee1bc879b7875a23e7e4687d",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "lnori",
+        "name": "lnori",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "7261249839498803086",
+                "name": "LNORI",
+                "lang": "en",
+                "kind": "BOOK",
+                "baseUrl": "https://lnori.com"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.2",
+                "url": "content/content-lnori-1.0.2.jar",
+                "sha512sum": "096c14def936da70522cbbb7da7d4623bc7178f8b5150086729020b9728fd3628cef5a93ff4c557969148ecf9a9c34fa1f656fd368396e25b40b9c2654254778",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "madara",
+        "name": "madara",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "5432970425689607116",
+                "name": "ManhuaFast",
+                "lang": "en",
+                "kind": "COMIC",
+                "baseUrl": "https://manhuafast.com"
+            },
+            {
+                "id": "5177484976652938680",
+                "name": "Manhwatop",
+                "lang": "en",
+                "kind": "COMIC",
+                "baseUrl": "https://manhwatop.com"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.1",
+                "url": "content/content-madara-1.0.1.jar",
+                "sha512sum": "bc267989e6fc91fabddba0cee675567a6f42dafe1c990ae95528d595ef919509d21e4ba2a434c32f76778973531cf23760e1e045982446473211c724a040b2cd",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "mangadex",
+        "name": "mangadex",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "2499283573021220255",
+                "name": "MangaDex",
+                "lang": "en",
+                "kind": "COMIC",
+                "baseUrl": "https://mangadex.org"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.2",
+                "url": "content/content-mangadex-1.0.2.jar",
+                "sha512sum": "878422ad0f901a9d7a46deb9e411ee547bd5dd117d8cec7d6b968a2ff7bb133d44796f5a2a435794d465e94f93d0dcd356da205436ddc20c2200968255396b62",
+                "date": "2026-09-12T01:52:56.742Z"
+            }
+        ]
+    },
+    {
+        "id": "mangakuro",
+        "name": "mangakuro",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "4278045440527026000",
+                "name": "MangaKuro",
+                "lang": "ja",
+                "kind": "COMIC",
+                "baseUrl": "https://mangakuro.net"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.1",
+                "url": "content/content-mangakuro-1.0.1.jar",
+                "sha512sum": "25ef47157758d1910fc4dba89aed2ebecf5782599ba01b39dc8f989d021ee13863c8e21835fc412af67a9d6a6a1ac8578ca0f0826806d751ced3a91cdcd100f8",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "manhwazone",
+        "name": "manhwazone",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "618830122769950563",
+                "name": "ManhwaZone",
+                "lang": "en",
+                "kind": "COMIC",
+                "baseUrl": "https://manhwazone.com"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.1",
+                "url": "content/content-manhwazone-1.0.1.jar",
+                "sha512sum": "e30826394a743649e33c6c3e80e95a3230eefc12ef948bab88995af047e51cbc9db908e9b0b29534b092767e80f508fdc252eaba46867ca69d53484b68eb27cf",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "nhentai",
+        "name": "nhentai",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "2203215402871965477",
+                "name": "NHentai",
+                "lang": "zh",
+                "kind": "COMIC",
+                "baseUrl": "https://nhentai.net"
+            },
+            {
+                "id": "3122156392225024195",
+                "name": "NHentai",
+                "lang": "en",
+                "kind": "COMIC",
+                "baseUrl": "https://nhentai.net"
+            },
+            {
+                "id": "4726175775739752699",
+                "name": "NHentai",
+                "lang": "ja",
+                "kind": "COMIC",
+                "baseUrl": "https://nhentai.net"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.4",
+                "url": "content/content-nhentai-1.0.4.jar",
+                "sha512sum": "17584419e7c9bebb64e54eb197d2237d55e3cbc8e2efb3fef54d2c14b0a6c7bebd9f69d8ed6d314f140cb89b4bdf318249f528f97cf816f7404eb7fe207bf954",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "novelbuddy",
+        "name": "novelbuddy",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "1260875580122894435",
+                "name": "NovelBuddy",
+                "lang": "en",
+                "kind": "BOOK",
+                "baseUrl": "https://novelbuddy.me"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.1",
+                "url": "content/content-novelbuddy-1.0.1.jar",
+                "sha512sum": "e0b2f0cf00f7b537d5c95caf953898f2b813299673ce6931af5c49a0a29ac234f481b8cb049a51cf68d55b5ac19d412fa22b4636d4ca44301582acf9e47858ce",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "novelfire",
+        "name": "novelfire",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "362477112063851529",
+                "name": "Novel Fire",
+                "lang": "en",
+                "kind": "BOOK",
+                "baseUrl": "https://novelfire.net"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.2",
+                "url": "content/content-novelfire-1.0.2.jar",
+                "sha512sum": "9671f1540c8a38860de2c5d17340bd01cdb2c3c9634e5f2d845d2ba378009add5011e44ce0d163c4739fb69a7db8ccf05a5c953f049ee9bda5e175aa8de4e135",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "ranobes",
+        "name": "ranobes",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "7992304614005451099",
+                "name": "Ranobes",
+                "lang": "en",
+                "kind": "BOOK",
+                "baseUrl": "https://ranobes.top"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.1",
+                "url": "content/content-ranobes-1.0.1.jar",
+                "sha512sum": "f0bc6c3d64d219971aa24803167e34aaa05d6f3e8945f5fdea8566ebbb18ca14db02af495177722226ff9b44827bd34f761751ecdf561f6c53faa04d8013bc91",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "rawkuma",
+        "name": "rawkuma",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "5746834068092446709",
+                "name": "Rawkuma",
+                "lang": "ja",
+                "kind": "COMIC",
+                "baseUrl": "https://rawkuma.net"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.1",
+                "url": "content/content-rawkuma-1.0.1.jar",
+                "sha512sum": "3ba0609b0c46aa33c087b78863f183be513efd921a20e6418817f8fe4361ba263175a866557708fb7816fa5eaf389f3e3e20f39359d0028f1f3f045e5624147b",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "royalroad",
+        "name": "royalroad",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "6993920824794899604",
+                "name": "Royal Road",
+                "lang": "en",
+                "kind": "BOOK",
+                "baseUrl": "https://www.royalroad.com"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.1",
+                "url": "content/content-royalroad-1.0.1.jar",
+                "sha512sum": "a29e0ddda22cc663dffbd640441f69801bfce6a54340375077c1bad536d4bcbe2ebdc54809da0a552d8bd1a9bbec4376709cd7def359821ef2b92bb9e3502322",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "vortexscans",
+        "name": "vortexscans",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "2559570015828016575",
+                "name": "Vortex Scans",
+                "lang": "en",
+                "kind": "COMIC",
+                "baseUrl": "https://vortexscans.org"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.1",
+                "url": "content/content-vortexscans-1.0.1.jar",
+                "sha512sum": "85cf8808c4f11148c56765f91ba87d02c9d152ecc1e44769987bc4ccf58807e8b9de5fe25111d0502b284918904732ac77cefe5528d1e2b69352ec0a7890814f",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "webnovel",
+        "name": "webnovel",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "4081135203808920563",
+                "name": "WebNovel",
+                "lang": "en",
+                "kind": "COMIC",
+                "baseUrl": "https://www.webnovel.com"
+            },
+            {
+                "id": "6373936102024890001",
+                "name": "WebNovel (Novels)",
+                "lang": "en",
+                "kind": "BOOK",
+                "baseUrl": "https://www.webnovel.com"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.3",
+                "url": "content/content-webnovel-1.0.3.jar",
+                "sha512sum": "4ff1b3746290be78789e698065519566dad553bd48bd09c269dc9798325574653e14c28a372a0ec88fa422eeb99655385345826af883c348416b1609cd147213",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "weebcentral",
+        "name": "weebcentral",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "2131019126180322627",
+                "name": "Weeb Central",
+                "lang": "en",
+                "kind": "COMIC",
+                "baseUrl": "https://weebcentral.com"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.2",
+                "url": "content/content-weebcentral-1.0.2.jar",
+                "sha512sum": "10edbfb42b836fdad8ca59f0b453907803cb3157ee5fbb2bbeb6fa181285295c7bfbb71225b1ac884b540b762b11bb7c41cd4ec5fd12c99fc9a10f86b932bd9e",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "wuxiaworld",
+        "name": "wuxiaworld",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "CONTENT",
+        "sources": [
+            {
+                "id": "6540843430852844328",
+                "name": "WuxiaWorld",
+                "lang": "en",
+                "kind": "BOOK",
+                "baseUrl": "https://www.wuxiaworld.com"
+            }
+        ],
+        "releases": [
+            {
+                "version": "1.0.1",
+                "url": "content/content-wuxiaworld-1.0.1.jar",
+                "sha512sum": "a2510740d9a9a108d9673395e2d79283872179c8cbb893c155586295c6d4705d367679a8dc4a6f75c95f0a1f5c79a643df8b229b6997ce0bc29a3086e3f233ab",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "amazon",
+        "name": "Amazon",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "METADATA",
+        "releases": [
+            {
+                "version": "1.0.0",
+                "url": "metadata/metadata-amazon-1.0.0.jar",
+                "sha512sum": "eb5db8cd19560e9d77d4360b3e35fc14b52d6ea06433f4b78ef6fd03de045c0da8e5105a1e3278c893b237aaf5a37119fe6a1220b29fec11cf45c63bdb1c8aab",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "anilist",
+        "name": "AniList",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "METADATA",
+        "releases": [
+            {
+                "version": "1.0.0",
+                "url": "metadata/metadata-anilist-1.0.0.jar",
+                "sha512sum": "8417526022c556ef938e3347a6f37c7f003b0ca12e1b555f9ce5833cf6deaf9a1903134b029fbf41a3729e0f95fdd96ff36661cc23fd33e162afb1f97015a194",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "comicvine",
+        "name": "ComicVine",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "METADATA",
+        "releases": [
+            {
+                "version": "1.0.0",
+                "url": "metadata/metadata-comicvine-1.0.0.jar",
+                "sha512sum": "6d1cc1ba622aefc0f7a9ca1e8d8dbd2f21e2027e161e65bc1553d7c450bb2b059603ba1a5ad872b58965c8dd7f5ae8c8dbbe9501b9663c5e85aa3b49a9b2c9e7",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "goodreads",
+        "name": "Goodreads",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "METADATA",
+        "releases": [
+            {
+                "version": "1.0.0",
+                "url": "metadata/metadata-goodreads-1.0.0.jar",
+                "sha512sum": "f34bff2338e163664285101641bb9de29fcfb1d5c9feb3f6d86795b3752138acf14aeb646148b2896f49b17062dcdcd2af4fc9b1d9ada12200dfe8436be15e2e",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "googlebooks",
+        "name": "Google Books",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "METADATA",
+        "releases": [
+            {
+                "version": "1.0.0",
+                "url": "metadata/metadata-googlebooks-1.0.0.jar",
+                "sha512sum": "f3faa6d958e68b9e8b472e632cce20ed852361536c0a4e04b02cd44bb16e1437ddc99a2c5a86591634f9cdf48fa7ebf171f080c044eb2e9850a8f8d1dda18857",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "hardcover",
+        "name": "Hardcover",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "METADATA",
+        "releases": [
+            {
+                "version": "1.0.0",
+                "url": "metadata/metadata-hardcover-1.0.0.jar",
+                "sha512sum": "7f305d5891e832c68d474f4d6841e4c7dcbcaf847effb56007c7074b4a2d4ed09575c8d6b3efe848ace7613c0652d9426b8a425ab737254d5d5f5a6d7bf88a63",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "mangabaka",
+        "name": "MangaBaka",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "METADATA",
+        "releases": [
+            {
+                "version": "1.0.0",
+                "url": "metadata/metadata-mangabaka-1.0.0.jar",
+                "sha512sum": "ffc4f0497c2b7bf4cacbd615651d6e2fe6eea2f2eba79552e2141c1bf34b508b811ff4d5b23cebe15007b53643b4d2ecc45e16e43caa45c14beefc41a3154514",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "mangaupdates",
+        "name": "MangaUpdates",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "METADATA",
+        "releases": [
+            {
+                "version": "1.0.0",
+                "url": "metadata/metadata-mangaupdates-1.0.0.jar",
+                "sha512sum": "93f3c37050d133c00586e4b8eaf2226ab8a8c1e813981b29cd630700c5bface9d6ae9f2f7f8dd0f32947d9fde301c12f6e4268f394e162082ac232c69f18bc57",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "myanimelist",
+        "name": "MyAnimeList",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "METADATA",
+        "releases": [
+            {
+                "version": "1.0.0",
+                "url": "metadata/metadata-myanimelist-1.0.0.jar",
+                "sha512sum": "bcd7596e35404fb06da3fecee4faaa046b031f423189a6dafe7749df95ab8380d35a798a45878d375e3e5407f6d765917408db62cb8f8b0c06fe4fb5161d4657",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "openlibrary",
+        "name": "Open Library",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "METADATA",
+        "releases": [
+            {
+                "version": "1.0.0",
+                "url": "metadata/metadata-openlibrary-1.0.0.jar",
+                "sha512sum": "ded8223dee69a3e2ec5ee11ffb366cd0d3adcc7105825b97aff1a4d337cd6abf191c14bd8832d8d96bb86ecfd5a1a8e97809a294a71a2a2f0187bcbdd1635a5a",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    },
+    {
+        "id": "ranobedb",
+        "name": "RanobeDB",
+        "description": "",
+        "provider": "Kodex",
+        "kind": "METADATA",
+        "releases": [
+            {
+                "version": "1.0.0",
+                "url": "metadata/metadata-ranobedb-1.0.0.jar",
+                "sha512sum": "120c03b2c8c9b174bca6f9536a4a4a718ffd9c6898716a3c24c45b44a646870e3c390237387b4ce090e7d31665f0ccb8e3c9aed0d4a5b051b9874190c23e1b1a",
+                "date": "2026-09-07T09:08:26Z"
+            }
+        ]
+    }
+]
